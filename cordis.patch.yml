@@ -1,0 +1,7 @@
+# dsh-split-pane bundle patch: inserts this plugin's row into the web profile
+# roster. Activated with `dsh plugin --profile web add .` (or a github: / link:
+# spec). The host half is an empty loader entry — the split workspace is
+# browser-only and registers itself through the `dsh.client` declaration.
+- insert:
+    - id: split-pane
+      name: 'dsh-split-pane'

@@ -1,0 +1,193 @@
+/* The split workspace fills the central panel and owns its own scrolling: each
+   pane body carries the Conversation's scrollport, so the workspace itself
+   never scrolls. */
+.root {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+
+/* One split: children share the axis through flex-grow, so a ratio change is a
+   layout-only update with no measurement of its own. */
+.groupRow {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: row;
+}
+
+.groupColumn {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.child {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-grow: 0;
+  flex-shrink: 1;
+  flex-basis: 0;
+  overflow: hidden;
+}
+
+/* The divider hit strip: 7px wide, straddling the seam so the grab area is
+   wider than the hairline it paints. */
+.dividerRow {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.dividerColumn {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 7px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.dividerRow::after,
+.dividerColumn::after {
+  content: '';
+  position: absolute;
+  background: var(--dsw-alias-border-l2);
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.dividerRow::after {
+  inset: 0 auto 0 3px;
+  width: 1px;
+}
+
+.dividerColumn::after {
+  inset: 3px 0 auto;
+  height: 1px;
+}
+
+.dividerRow:hover::after,
+.dividerColumn:hover::after {
+  background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+/* One pane: chrome row above, Conversation body below. */
+.pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+
+.chrome {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 6px 0 8px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+.select {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Pane-local controls stay quiet: the pane body is the content, not the
+   chrome, so these read as affordances rather than buttons until hovered. */
+.action {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.action:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* A focused pane gets the accent seam so several panes stay distinguishable. */
+.pane[data-split-pane-focused] .chrome {
+  border-bottom-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+/* The body is unpadded: the Conversation reaches the pane's edges and draws its
+   own insets, exactly as it does in the main panel. */
+.body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.empty {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.emptySelect {
+  max-width: 220px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+/* The body wrapper a Session-scoped occurrence fills: the Conversation reaches
+   the pane's edges and draws its own insets. */
+.paneBody {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
