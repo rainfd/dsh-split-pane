@@ -2,9 +2,10 @@
  * The split workspace: the `main` panel that holds several live Sessions at
  * once.
  *
- * This is the plugin's whole visible surface. It owns the split tree, draws one
- * frame and chrome row per pane, hosts one Conversation occurrence per pane, and
- * persists the tree per anchoring Session.
+ * This is the plugin's visible surface. It draws one frame, chrome row, and
+ * Conversation occurrence per pane. The arrangement itself lives in the shared
+ * store, because the conversation header's New split button and the keyboard
+ * shortcut act on the same tree from outside this component.
  *
  * Scope note: `main` is a root-scope keyed slot, so this component receives no
  * Session binding for the panel itself. The anchoring Session comes from the
@@ -21,7 +22,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
   SnapshotSelectorHook, StandardSourceBinding,
@@ -30,11 +31,10 @@ import type { SessionProviderComponent } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ISessions, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import {
-  clampRatio, leaf, paneCount, panes, removeAt, replaceAt, reviveTree, samePath,
-  split as makeSplit, type PaneNode,
-} from '../contract/layout.ts'
+import { leaf, paneCount, panes, reviveTree, samePath } from '../contract/layout.ts'
 import type { SplitPaneOwnerProps } from '../contract/slots.ts'
+import type { SplitPaneActions, SplitPaneState } from '../stores.ts'
+import type { createSplitPaneStore } from '../stores.ts'
 import { PaneChrome } from './PaneChrome.tsx'
 import { PaneFrame } from './PaneFrame.tsx'
 import { PaneHost } from './PaneHost.tsx'
@@ -48,13 +48,20 @@ export const PANE_LIMIT: number | undefined = undefined
 
 /** Face this plugin injects into its own `main` panel. */
 export interface SplitWorkspaceInjected {
-  /** Bare sources the renderer binds to `useCurrent` and `useArchived`. */
+  /** Bare sources the renderer binds to `useCurrent`, `useArchived`, and `useLayout`. */
   readonly hooks: {
     readonly current: HostObservable<StandardSourceBinding>
     readonly archived: HostObservable<WorkspaceSnapshot>
+    readonly layout: HostObservable<SplitPaneState>
   }
   /** Client Sessions service, for per-pane retention. */
   readonly sessions: ISessions
+  /** Writes over the shared arrangement. */
+  readonly layoutActions: SplitPaneActions
+  /** Split one pane onto a newly created Session and show this panel. */
+  readonly splitWithNewSession: (
+    anchor: SessionId, path: readonly number[] | undefined, axis: 'row' | 'column',
+  ) => void
 }
 
 /** Props of the workspace panel, including the framework-standard SessionProvider seat. */
@@ -68,17 +75,20 @@ export type SplitWorkspaceProps =
     readonly useCurrent: SnapshotSelectorHook<StandardSourceBinding>
     /** Renderer-bound hook over the Workspace snapshot (for the archive set). */
     readonly useArchived: SnapshotSelectorHook<WorkspaceSnapshot>
+    /** Renderer-bound hook over the shared arrangement. */
+    readonly useLayout: SnapshotSelectorHook<SplitPaneState>
     /** Session body renderer supplied by the area declaration. */
     readonly SessionProvider: SessionProviderComponent
   }
 
 /**
  * Draw the split workspace.
- * @param props - runtime seats, injected faces, and this plugin's copy.
+ * @param props - runtime seats, the store, injected faces, and this plugin's copy.
  * @returns the workspace element.
  */
 export function SplitWorkspace({
-  useSessions, useCurrent, useArchived, sessions, renderSlot, SessionProvider, t,
+  useSessions, useCurrent, useArchived, useLayout, sessions, renderSlot, SessionProvider,
+  layoutActions: actions, splitWithNewSession: splitNew, t,
 }: SplitWorkspaceProps): ReactNode {
   const current = useCurrent(binding => binding.key)
   const archived = useArchived(snapshot => snapshot.archivedSessionIds)
@@ -96,53 +106,41 @@ export function SplitWorkspace({
     [ids, list.byId],
   )
 
-  const [tree, setTree] = useState<PaneNode>(() => leaf(sessionId))
-  const [focused, setFocused] = useState<readonly number[]>([])
-  const [anchor, setAnchor] = useState<SessionId | undefined>(sessionId)
+  const known = useMemo(() => new Set(ids), [ids])
+  const arrangement = useLayout(
+    state => (sessionId === undefined ? undefined : state.byAnchor[sessionId]),
+  )
 
-  // Adopt the anchoring Session every time the workspace is re-entered, then
-  // keep the user's own arrangement for as long as that Session stays current.
+  // Seed the anchor's arrangement once from storage, so the header entry and the
+  // shortcut find a tree to add panes to even before this panel has rendered.
   useEffect(() => {
-    if (anchor === sessionId) return
-    setAnchor(sessionId)
-    setTree(readTree(sessionId, new Set(ids)))
-    setFocused([])
-  }, [anchor, sessionId, ids])
+    if (sessionId === undefined || arrangement !== undefined) return
+    actions.seed(sessionId, readTree(sessionId, known))
+  }, [actions, arrangement, known, sessionId])
+
+  const tree = arrangement?.tree ?? (sessionId === undefined ? undefined : leaf(sessionId))
+  const focus = arrangement?.focus ?? []
 
   // A Session deleted elsewhere must not leave a pane bound to nothing.
   useEffect(() => {
-    const known = new Set(ids)
-    setTree((currentTree) => {
-      const revived = reviveTree(currentTree, known)
-      return revived ?? leaf(sessionId)
-    })
-  }, [ids, sessionId])
+    if (sessionId === undefined || arrangement === undefined) return
+    const revived = reviveTree(arrangement.tree, known)
+    if (revived !== undefined && revived !== arrangement.tree) actions.setTree(sessionId, revived)
+  }, [actions, arrangement, known, sessionId])
 
-  useEffect(() => { writeTree(anchor, tree) }, [anchor, tree])
+  useEffect(() => {
+    if (sessionId === undefined || tree === undefined) return
+    writeTree(sessionId, tree)
+  }, [sessionId, tree])
 
-  const activePath = focused.length > 0 ? focused : [0]
-  const canSplit = PANE_LIMIT === undefined || paneCount(tree) < PANE_LIMIT
+  // The focused pane's path, repaired when focus does not address a live pane:
+  // a single-pane tree is addressed by `[]`, so a `[0]` default would leave the
+  // only pane reading as unfocused.
+  const panePaths = tree === undefined ? [] : panes(tree).map(pane => pane.path)
+  const activePath = panePaths.find(path => samePath(path, focus)) ?? panePaths[0] ?? []
+  const canSplit = tree !== undefined && (PANE_LIMIT === undefined || paneCount(tree) < PANE_LIMIT)
+  const anchor = sessionId
 
-  const splitAt = useCallback((path: readonly number[], axis: 'row' | 'column') => {
-    setTree(currentTree => replaceAt(currentTree, path, node => makeSplit(axis, node, leaf())))
-    setFocused([...path, 1])
-  }, [])
-  const closeAt = useCallback((path: readonly number[]) => {
-    setTree((currentTree) => {
-      if (paneCount(currentTree) <= 1) return currentTree
-      return removeAt(currentTree, path)
-    })
-    setFocused(path.slice(0, -1))
-  }, [])
-  const selectAt = useCallback((path: readonly number[], next: SessionId | undefined) => {
-    setTree(currentTree => replaceAt(currentTree, path, () => leaf(next)))
-  }, [])
-  const ratioAt = useCallback((path: readonly number[], ratio: number) => {
-    setTree(currentTree => replaceAt(currentTree, path, (node) => {
-      if (node.kind !== 'split') return node
-      return { ...node, ratio: clampRatio(ratio) }
-    }))
-  }, [])
   const retain = useCallback(
     (id: string, signal: AbortSignal): SessionReference =>
       sessions.retain(id as SessionId, { source: 'splitPane', signal }),
@@ -150,6 +148,7 @@ export function SplitWorkspace({
   )
 
   const renderPane = useCallback((path: readonly number[]): ReactNode => {
+    if (tree === undefined || anchor === undefined) return null
     const pane = panes(tree).find(entry => samePath(entry.path, path))
     const paneSession = pane?.sessionId
     const focusedHere = samePath(path, activePath)
@@ -157,10 +156,12 @@ export function SplitWorkspace({
       path,
       focused: focusedHere,
       canSplit,
-      onSplit: (axis) => { splitAt(path, axis) },
-      onClose: () => { closeAt(path) },
+      // A pane's own split control behaves exactly like the header's: the new
+      // half is a new Session, not a second view of this one.
+      onSplit: (axis) => { splitNew(anchor, path, axis) },
+      onClose: () => { actions.closePane(anchor, path) },
       choices,
-      onSelect: (next) => { selectAt(path, next) },
+      onSelect: (next) => { actions.showInPane(anchor, path, next) },
     }
     return (
       <PaneFrame
@@ -168,7 +169,7 @@ export function SplitWorkspace({
         path={path}
         focused={focusedHere}
         sessionId={paneSession}
-        onFocus={() => { setFocused(path) }}
+        onFocus={() => { actions.setFocus(anchor, path) }}
         chrome={(
           <PaneChrome
             sessionId={paneSession}
@@ -198,13 +199,18 @@ export function SplitWorkspace({
       />
     )
   }, [
-    tree, activePath, canSplit, choices, splitAt, closeAt, selectAt, retain,
+    tree, anchor, activePath, canSplit, choices, actions, splitNew, retain,
     SessionProvider, renderSlot, t,
   ])
 
+  if (tree === undefined || anchor === undefined) return <div className={css.root} data-split-pane-root="" />
   return (
     <div className={css.root} data-split-pane-root="">
-      <SplitTree node={tree} path={[]} context={{ renderPane, onRatio: ratioAt }} />
+      <SplitTree
+        node={tree}
+        path={[]}
+        context={{ renderPane, onRatio: (path, ratio) => { actions.setRatio(anchor, path, ratio) } }}
+      />
     </div>
   )
 }

@@ -43,9 +43,19 @@ resolves every shared module through the shell's own module table.
 
 <a id="use-this-package"></a>
 
-The sidebar's panel list carries a `Split` entry beside the Conversation. Selecting it swaps the center column for the split workspace; selecting the Conversation entry again (or any other main panel) swaps back. The workspace opens on the Session that was already current, so entering it never changes which Session the user was reading.
+There are three ways in, and all three produce the same thing: a new pane holding a **new Session**, in the Workspace the Session you split from belongs to.
 
-Every pane draws its own chrome row: a Session picker, split-right and split-down controls, and a close control. Splitting a pane seats a new empty pane beside it and focuses that pane; the empty pane offers the same Session picker. Closing a pane promotes its sibling into the space the pair occupied, and the last remaining pane cannot be closed — an empty workspace has nothing to show. A divider drags to change the shares, bounded so neither side falls below a usable width.
+**The conversation header button.** While a conversation is open, a split control sits in the header's utilities row beside the right panel's expand control. Pressing it splits the panel you are reading and opens the workspace on the new Session, ready to type into.
+
+**The keyboard.** The same action is `Cmd/Ctrl+Alt+S` (`splitPane.new`), listed in the shortcut reference and shown in the header button's tooltip. On Linux Web no default is bound — the browser-binding gate admits only a fixed allowlist there, and the host's own commands leave Linux Web unbound for the same reason; assign one in the shortcut reference.
+
+**A pane's own split control.** Inside the workspace, every pane's chrome row carries split-right and split-down. Either one splits that pane and puts a new Session in the new half.
+
+The button is hidden on a brand-new empty conversation, because the host renders no header utilities until a conversation has content. The shortcut and the pane controls work there.
+
+The sidebar's panel list also carries a `Split` entry beside the Conversation. Selecting it swaps the center column for the split workspace without creating anything; selecting the Conversation entry again (or any other main panel) swaps back. The workspace opens on the Session that was already current, so entering it never changes which Session the user was reading.
+
+Every pane draws its own chrome row: a Session picker, split-right and split-down controls, and a close control. The Session picker re-points a pane at any existing Session, so a pane is not stuck on the one it was created with. Closing a pane promotes its sibling into the space the pair occupied, and the last remaining pane cannot be closed — an empty workspace has nothing to show. A divider drags to change the shares, bounded so neither side falls below a usable width.
 
 Panes do not share state. Each pane keeps its own Session binding, so a prompt typed in one pane never lands in another; a Session shown in two panes is two independent views of one Session, not one view mirrored. `ask_user_question` and approval prompts are answered in the pane whose Session asked.
 
@@ -92,7 +102,8 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Panes render the Conversation body, not the Session header.** A pane shows the transcript and composer; the resident header's navigation and View tabs stay with the main panel, because the header belongs to `main.conversation` and is not a reusable Factory.
+- **Panes render the Conversation body, not the Session header.** A pane shows the transcript and composer; the resident header's navigation and View tabs stay with the main panel, because the header belongs to `main.conversation` and is not a reusable Factory. That is also why a pane carries its Session identity in the workspace's own chrome row rather than in a per-pane copy of the header.
+- **The header entry is absent on an empty conversation.** Its seat is the header utilities row, which the host renders only once a conversation has content; the shortcut and the sidebar panel entry cover that state.
 - **Retention grows with the pane count.** Each pane holds its own Session reference and history stream; there is no eviction of off-screen panes yet, so a very wide arrangement costs one live stream per pane.
 - **No drag-to-arrange.** Panes are created by the split controls and removed by close; moving an existing pane to another position is not offered.
 - **The workspace is not a Session.** It carries no Session of its own, so it has no entry in the Session list and its arrangement is keyed by whichever Session was current when it opened.

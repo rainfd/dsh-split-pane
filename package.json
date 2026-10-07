@@ -26,6 +26,7 @@
         "@deepseek-ai/dsh-api-session-controller",
         "@deepseek-ai/dsh-api-workspace-controller",
         "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-shortcuts",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-renderer",
@@ -67,6 +68,7 @@
     "@deepseek-ai/dsh-api-session-controller": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/dsh-api-workspace-controller": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/dsh-client-locale": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-client-shortcuts": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/dsh-client-ui-conversation": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/dsh-client-ui-layout": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.0-rc.2 <0.3.0",
@@ -89,6 +91,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-shortcuts": {
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-conversation": {
@@ -128,7 +133,7 @@
     "@deepseek-ai/dsh-api-session-controller": "0.2.0-rc.2",
     "@deepseek-ai/dsh-api-workspace-controller": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-shortcuts": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-shortcuts": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-client-store": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-conversation": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-layout": "0.2.0-rc.2",
@@ -146,13 +151,15 @@
     "@types/node": "^24.0.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.1",
+    "immer": "^10.0.0",
     "jsdom": "^25.0.1",
     "lightningcss": "^1.32.0",
     "react": "^18.2.0",
     "react-dom": "18.2.0",
     "tsdown": "^0.22.0",
     "typescript": "~5.9.0",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "zustand": "^5.0.0"
   },
   "license": "MIT",
   "keywords": [

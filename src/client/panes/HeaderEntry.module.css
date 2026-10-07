@@ -1,0 +1,85 @@
+/* Positioning host for the button and its hover tooltip. */
+.host {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* Compact control metrics, copied from the host's `Button` size="sm":
+   28px tall, 8px corners, hairline-free ghost fill. The right panel's expand
+   control and the Open in app capsule sit in the same row at the same size. */
+.button {
+  box-sizing: border-box;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.button:active {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  outline-offset: 1px;
+}
+
+.button svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* The tooltip: hidden until hover or keyboard focus, anchored below the control
+   exactly as the host's own header tooltips are. */
+.tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-elevation-prominent);
+  box-shadow: var(--dsw-elevation-stroke-color) 0 0 0 0.5px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.host:hover .tip,
+.host:focus-within .tip {
+  display: inline-flex;
+}
+
+.keys {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.key {
+  padding: 0 4px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 16px;
+}
