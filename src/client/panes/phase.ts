@@ -20,14 +20,26 @@ import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversati
 /** The Factory input a pane's phase resolves to. */
 export interface PanePhase {
   readonly phase: 'settling' | 'hero' | 'active'
-  readonly hero: boolean
+  /**
+   * Always false: a pane never draws the blank-Session Hero.
+   *
+   * The Hero carries single-occurrence slots — the workspace picker and the
+   * brand mark are `kind: 'single'` at root scope, and the agent-preset control
+   * is single at session-maybe scope, which a blank Session resolves to the root
+   * occurrence. A single slot may be rendered in one place at a time, so a
+   * second pane drawing the Hero makes those entries fight over their
+   * occurrence: React reports "maximum update depth exceeded" once per entry,
+   * per pane. Panes therefore draw the composer, which is what a User types
+   * into anyway, and the main panel keeps ownership of the Hero.
+   */
+  readonly hero: false
 }
 
 /**
  * Derive the Conversation phase for one Session.
  * @param session - that Session's lifecycle snapshot.
  * @param conversation - that Session's Conversation snapshot.
- * @returns the phase and hero flag the Factory takes.
+ * @returns the phase the Factory takes, with the panes' hero flag.
  */
 export function panePhase(
   session: SessionSnapshot | undefined,
@@ -41,6 +53,6 @@ export function panePhase(
     || session.running
   const shell = active ? 'active' : session.promptAttempted ? 'engaging' : 'blank'
   const settling = shell === 'blank' && session.openState === 'loading' && !session.blank
-  const hero = shell === 'blank' && (session.openState === 'open' || session.blank)
-  return { phase: settling ? 'settling' : hero ? 'hero' : 'active', hero }
+  const blank = shell === 'blank' && (session.openState === 'open' || session.blank)
+  return { phase: settling ? 'settling' : blank ? 'hero' : 'active', hero: false }
 }

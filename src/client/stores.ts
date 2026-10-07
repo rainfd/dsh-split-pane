@@ -19,7 +19,7 @@
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { defineStore } from '@deepseek-ai/dsh-client-store'
 import {
-  clampRatio, leaf, paneCount, removeAt, replaceAt, split as makeSplit, type PaneNode,
+  clampRatio, closeAt, focusedPath, leaf, replaceAt, split as makeSplit, type PaneNode,
 } from './contract/layout.ts'
 
 /** One anchoring Session's arrangement. */
@@ -92,7 +92,10 @@ export function createSplitPaneStore() {
       addPane(draft, anchor: SessionId, path: readonly number[] | undefined,
         sessionId: SessionId | undefined, axis: 'row' | 'column') {
         const current = anchorOf(draft, anchor) ?? { tree: leaf(anchor), focus: [] }
-        const at = path ?? current.focus
+        // Stored focus may address the root of a multi-pane tree (the empty path
+        // left by `seed`), and splitting the root would nest the whole workspace
+        // inside one half. Normalize to a pane first.
+        const at = path ?? focusedPath(current.tree, current.focus)
         draft.byAnchor[anchor] = {
           tree: replaceAt(current.tree, at, node => makeSplit(axis, node, leaf(sessionId))),
           focus: [...at, 1],
@@ -108,8 +111,10 @@ export function createSplitPaneStore() {
       },
       closePane(draft, anchor: SessionId, path: readonly number[]) {
         const current = anchorOf(draft, anchor)
-        if (current === undefined || paneCount(current.tree) <= 1) return
-        draft.byAnchor[anchor] = { tree: removeAt(current.tree, path), focus: path.slice(0, -1) }
+        if (current === undefined) return
+        const closed = closeAt(current.tree, path)
+        if (closed === undefined) return
+        draft.byAnchor[anchor] = closed
       },
       setRatio(draft, anchor: SessionId, path: readonly number[], ratio: number) {
         const current = anchorOf(draft, anchor)

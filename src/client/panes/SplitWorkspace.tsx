@@ -31,7 +31,7 @@ import type { SessionProviderComponent } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ISessions, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { leaf, paneCount, panes, reviveTree, samePath } from '../contract/layout.ts'
+import { leaf, paneCount, paneKey, panes, reviveTree, samePath, sameTree } from '../contract/layout.ts'
 import type { SplitPaneOwnerProps } from '../contract/slots.ts'
 import type { SplitPaneActions, SplitPaneState } from '../stores.ts'
 import type { createSplitPaneStore } from '../stores.ts'
@@ -125,7 +125,12 @@ export function SplitWorkspace({
   useEffect(() => {
     if (sessionId === undefined || arrangement === undefined) return
     const revived = reviveTree(arrangement.tree, known)
-    if (revived !== undefined && revived !== arrangement.tree) actions.setTree(sessionId, revived)
+    // Value comparison, not reference: `reviveTree` rebuilds what it accepts, so
+    // writing back an unchanged tree would re-notify this component's own
+    // subscription on every render, and the effect would run again.
+    if (revived !== undefined && !sameTree(revived, arrangement.tree)) {
+      actions.setTree(sessionId, revived)
+    }
   }, [actions, arrangement, known, sessionId])
 
   useEffect(() => {
@@ -165,7 +170,7 @@ export function SplitWorkspace({
     }
     return (
       <PaneFrame
-        key={path.join('.')}
+        key={paneKey(path)}
         path={path}
         focused={focusedHere}
         sessionId={paneSession}
@@ -189,7 +194,7 @@ export function SplitWorkspace({
         body={(
           <PaneHost
             sessionId={paneSession}
-            occurrenceKey={path.join('.')}
+            occurrenceKey={paneKey(path)}
             retain={retain}
             SessionProvider={SessionProvider}
             renderBody={() => renderSlot('split.pane', owner)}

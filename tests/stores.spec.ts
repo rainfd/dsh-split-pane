@@ -90,6 +90,18 @@ describe('addPane', () => {
     instance.actions.addPane(fresh, undefined, sid('new'), 'row')
     expect(shown(instance, fresh)).toEqual([fresh, 'new'])
   })
+
+  it('splits the first pane when focus addresses the root of a wide tree', () => {
+    const { instance, anchor } = bench()
+    instance.actions.addPane(anchor, undefined, sid('a'), 'column')
+    // Reloading the workspace seeds the stored tree; `seed` leaves focus empty,
+    // and in a two-pane tree the empty path is the root — a split, not a pane.
+    instance.actions.seed(anchor, instance.getSnapshot().byAnchor[anchor]!.tree)
+    instance.actions.addPane(anchor, undefined, sid('b'), 'column')
+    // Splitting the addressed node would nest the entire workspace in one half.
+    expect(shown(instance, anchor)).toEqual([anchor, 'b', 'a'])
+    expect(paneCount(instance.getSnapshot().byAnchor[anchor]!.tree)).toBe(3)
+  })
 })
 
 describe('showInPane', () => {
@@ -140,6 +152,26 @@ describe('closePane', () => {
     instance.actions.addPane(anchor, undefined, sid('b'), 'row')
     instance.actions.closePane(anchor, [1])
     expect(instance.getSnapshot().byAnchor[anchor]?.focus).toEqual([])
+  })
+
+  it('focuses the pane that took over the closed space', () => {
+    const { instance, anchor } = bench()
+    instance.actions.addPane(anchor, undefined, sid('b'), 'row')
+    instance.actions.addPane(anchor, [1], sid('c'), 'column')
+    expect(instance.getSnapshot().byAnchor[anchor]?.focus).toEqual([1, 1])
+    instance.actions.closePane(anchor, [1, 1])
+    expect(shown(instance, anchor)).toEqual([anchor, 'b'])
+    expect(instance.getSnapshot().byAnchor[anchor]?.focus).toEqual([1])
+  })
+
+  it('leaves the arrangement alone when the path is not a pane', () => {
+    const { instance, anchor } = bench()
+    instance.actions.addPane(anchor, undefined, sid('b'), 'row')
+    const before = instance.getSnapshot().byAnchor[anchor]
+    // The root of a two-pane tree is a split, so there is nothing to close; the
+    // focus must not be rewritten to the empty path either.
+    instance.actions.closePane(anchor, [])
+    expect(instance.getSnapshot().byAnchor[anchor]).toEqual(before)
   })
 })
 

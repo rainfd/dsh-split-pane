@@ -5,8 +5,12 @@
  * pane keeps its split and close controls whether or not it currently shows a
  * Session. The body area is either the empty-pane picker or the Conversation
  * occurrence the `split.pane` slot renders.
+ *
+ * The frame is focusable without joining the tab order, because keyboard
+ * navigation between panes focuses it when a pane has no editable of its own.
  */
 import type { ReactNode } from 'react'
+import { paneKey } from '../contract/layout.ts'
 import css from './SplitPane.module.css'
 
 /** What one pane frame draws. */
@@ -32,9 +36,10 @@ export function PaneFrame({
     <section
       className={css.pane}
       data-split-pane=""
-      data-split-pane-path={path.join('.')}
+      data-split-pane-path={paneKey(path)}
       data-split-pane-focused={focused ? '' : undefined}
       data-split-pane-session={sessionId ?? ''}
+      tabIndex={-1}
       onPointerDown={onFocus}
     >
       {chrome}

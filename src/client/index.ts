@@ -4,21 +4,19 @@
  * Registers a `main` panel key holding several live Sessions side by side, a
  * session-scope slot its pane bodies occupy, a conversation-header entry that
  * opens a split on a newly created Session, a keyboard shortcut for the same
- * action, and the sidebar icon that selects the panel. The panel is an ordinary
- * main panel, so the Conversation stays the default view.
+ * action, keyboard navigation between panes, and the sidebar icon that selects
+ * the panel. The panel is an ordinary main panel, so the Conversation stays the
+ * default view.
  *
- * Three entry points act on one tree, so the arrangement lives in a declared
+ * Every entry point acts on one tree, so the arrangement lives in a declared
  * store rather than in the workspace component. The header entry and the
- * shortcut both create a Session, seat it in a new pane, and select the panel.
- *
- * `main` is a root-scope keyed slot, so the plugin's own panel receives no
- * Session binding. The workspace reads the current selection through the
- * `session` scope adapter (`ctx.uiSession.adapter.current`) and re-addresses
- * every pane through `SessionProvider`.
+ * shortcut both create a Session, seat it in a new pane, and select the panel;
+ * the navigation and close commands act on the pane the workspace has focused.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { ShortcutCommand, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-shortcuts/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -30,9 +28,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { NS, en, zh, type SplitPaneKey } from './locales.ts'
 import { SPLIT_PANEL_ID } from './contract/slots.ts'
-import { leaf } from './contract/layout.ts'
-import { createSplitPaneStore } from './stores.ts'
+import {
+  closeAt, focusedPath, leaf, neighborPath, type PaneDirection,
+} from './contract/layout.ts'
+import { createSplitPaneStore, type SplitAnchorState } from './stores.ts'
 import { SplitWorkspace, type SplitWorkspaceInjected } from './panes/SplitWorkspace.tsx'
+import { focusPane } from './panes/focus.ts'
 import { PaneBody } from './panes/PaneBody.tsx'
 import { HeaderEntry } from './panes/HeaderEntry.tsx'
 import { SplitIcon } from './SplitIcon.tsx'
@@ -51,6 +52,42 @@ export const inject = [
 
 /** The command id the header entry's tooltip and the shortcut reference share. */
 const NEW_SPLIT_COMMAND = 'splitPane.new'
+
+/** One command's resolution, as the shortcuts service declares it. */
+type Resolution = ReturnType<ShortcutCommand['resolve']>
+
+/** The arrangement the keyboard commands act on: an anchor and its tree. */
+interface Seat {
+  readonly anchor: SessionId
+  readonly state: SplitAnchorState
+}
+
+/**
+ * The four pane-navigation commands.
+ *
+ * Each direction is one command because the registry binds physical
+ * combinations, not arguments. The copy keys are shared with the reference
+ * panel's search, so a user who types "pane" or "left" finds the row.
+ */
+const FOCUS_COMMANDS = [
+  {
+    id: 'splitPane.focusLeft', direction: 'left', code: 'ArrowLeft',
+    label: 'shortcut.focus.left', alias: 'shortcut.alias.left',
+  },
+  {
+    id: 'splitPane.focusRight', direction: 'right', code: 'ArrowRight',
+    label: 'shortcut.focus.right', alias: 'shortcut.alias.right',
+  },
+  {
+    id: 'splitPane.focusUp', direction: 'up', code: 'ArrowUp',
+    label: 'shortcut.focus.up', alias: 'shortcut.alias.up',
+  },
+  {
+    id: 'splitPane.focusDown', direction: 'down', code: 'ArrowDown',
+    label: 'shortcut.focus.down', alias: 'shortcut.alias.down',
+  },
+] as const
+
 
 /**
  * Register the split workspace, its entry points, and its sidebar icon.
@@ -108,6 +145,71 @@ export function apply(ctx: Context): void {
   /** Open a split from outside the workspace, on the anchor's focused pane. */
   const openSplit = (anchorSessionId: string): void => {
     splitWithNewSession(anchorSessionId as SessionId, undefined, 'column')
+  }
+
+  /**
+   * The arrangement the pane commands act on, but only while the split panel is
+   * the panel on screen. Every other view — the Conversation, a settings sheet —
+   * has no panes to move between, and there the combination belongs to the host,
+   * the browser, or the editor inside a composer, so resolving "pass" is what
+   * keeps ordinary editing keys ordinary.
+   * @returns the anchor and its arrangement, or `undefined` when the workspace is not showing.
+   */
+  const activeSeat = (): Seat | undefined => {
+    if (ctx.layout.panelInfo.getSnapshot().activePanelId !== SPLIT_PANEL_ID) return undefined
+    const anchor = ctx.uiSession.adapter.current.getSnapshot().key
+    if (anchor === undefined) return undefined
+    const state = layout.getSnapshot().byAnchor[anchor]
+    return state === undefined ? undefined : { anchor: anchor as SessionId, state }
+  }
+
+  /**
+   * Move pane focus one pane over.
+   *
+   * The neighbour is captured here, in the same tick as the key, so the pane
+   * this lands on cannot be renumbered by anything that happens before the
+   * action runs.
+   * @param direction - which way to move.
+   * @returns the resolution: pass when there is no workspace, handled otherwise.
+   */
+  const resolveFocus = (direction: PaneDirection): Resolution => {
+    const seat = activeSeat()
+    if (seat === undefined) return { status: 'pass' }
+    const next = neighborPath(
+      seat.state.tree, focusedPath(seat.state.tree, seat.state.focus), direction,
+    )
+    // At the edge of the layout there is no pane to move to, but the workspace
+    // still owns its own keys: consuming the press keeps the composer's caret
+    // from jumping instead.
+    if (next === undefined) return { status: 'handled', run: () => {} }
+    return {
+      status: 'handled',
+      run: () => {
+        layout.actions.setFocus(seat.anchor, next)
+        focusPane(next)
+      },
+    }
+  }
+
+  /**
+   * Close the focused pane, leaving its sibling in its place.
+   * @returns the resolution: pass without a workspace, blocked on the last pane.
+   */
+  const resolveClose = (): Resolution => {
+    const seat = activeSeat()
+    if (seat === undefined) return { status: 'pass' }
+    const from = focusedPath(seat.state.tree, seat.state.focus)
+    const closed = closeAt(seat.state.tree, from)
+    if (closed === undefined) return { status: 'blocked', reason: t('shortcut.lastPane') }
+    return {
+      status: 'handled',
+      run: () => {
+        layout.actions.closePane(seat.anchor, from)
+        // The closed pane's own element is about to unmount, and with it the
+        // browser's focus; hand it to the pane that took over the space.
+        focusPane(closed.focus)
+      },
+    }
   }
 
   const injected = (): SplitWorkspaceInjected => ({
@@ -176,6 +278,50 @@ export function apply(ctx: Context): void {
       return { status: 'handled', run: () => { openSplit(anchor) } }
     },
   }), 'ui-split-pane: shortcut')
+
+  // Moving and closing panes from the keyboard, listed in the same reference.
+  ctx.effect(() => {
+    const disposers = FOCUS_COMMANDS.map(entry => ctx.shortcuts.register({
+      id: entry.id as ShortcutCommandId,
+      label: () => t(entry.label),
+      aliases: [t('shortcut.alias.pane'), t('shortcut.alias.focus'), t(entry.alias)],
+      // macOS browsers own Command+Option+arrow: Chrome and Firefox switch tabs
+      // on Left/Right and cycle focus between toolbars on Up/Down, and a
+      // combination the browser reserves never reaches the page at all.
+      // Command+Shift+arrow is free there, which is also the Web side of this
+      // project's own convention — a desktop default that uses Alt becomes
+      // Mod+Shift on the Web. Windows keeps the Alt form, because
+      // Control+Shift+arrow is word selection inside a composer.
+      defaults: {
+        'desktop:macos': { code: entry.code, modifiers: ['primary', 'alt'] },
+        'desktop:windows': { code: entry.code, modifiers: ['primary', 'alt'] },
+        'web:macos': { code: entry.code, modifiers: ['primary', 'shift'] },
+        'web:windows': { code: entry.code, modifiers: ['primary', 'alt'] },
+      },
+      regions: ['page', 'editable'],
+      modals: [],
+      resolve: () => resolveFocus(entry.direction),
+    }))
+    disposers.push(ctx.shortcuts.register({
+      id: 'splitPane.close' as ShortcutCommandId,
+      label: () => t('shortcut.close'),
+      aliases: [t('shortcut.alias.pane'), t('shortcut.close')],
+      // Option/Alt+Backspace deletes a word backwards in a text field; the
+      // platform modifier on top of that pair is free in browsers and unclaimed
+      // by the host. The Command+Shift+W family is not usable on the Web: it
+      // closes the browser's own window.
+      defaults: {
+        'desktop:macos': { code: 'Backspace', modifiers: ['primary', 'alt'] },
+        'desktop:windows': { code: 'Backspace', modifiers: ['primary', 'alt'] },
+        'web:macos': { code: 'Backspace', modifiers: ['primary', 'alt'] },
+        'web:windows': { code: 'Backspace', modifiers: ['primary', 'alt'] },
+      },
+      regions: ['page', 'editable'],
+      modals: [],
+      resolve: resolveClose,
+    }))
+    return () => { for (const dispose of disposers) dispose() }
+  }, 'ui-split-pane: pane shortcuts')
 
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist',

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The Web client can show its center column as one Conversation or as a split workspace of several. Each pane is an independent Conversation occurrence addressed to its own Session: it streams, accepts prompts, queues messages, and answers its own `ask_user_question` and approval prompts. Panes split right or down without a fixed count, dividers drag, and the arrangement persists per Session.
+The Web client can show its center column as one Conversation or as a split workspace of several. Each pane is an independent Conversation occurrence addressed to its own Session: it streams, accepts prompts, queues messages, and answers its own `ask_user_question` and approval prompts. Panes split right or down without a fixed count, dividers drag, focus moves between panes from the keyboard and the focused pane closes the same way, and the arrangement persists per Session.
 
 ## Install
 
@@ -49,6 +49,8 @@ There are three ways in, and all three produce the same thing: a new pane holdin
 
 **The keyboard.** The same action is `Cmd/Ctrl+Alt+S` (`splitPane.new`), listed in the shortcut reference and shown in the header button's tooltip. On Linux Web no default is bound — the browser-binding gate admits only a fixed allowlist there, and the host's own commands leave Linux Web unbound for the same reason; assign one in the shortcut reference.
 
+**Moving and closing panes from the keyboard.** While the split workspace is the panel on screen, five commands are available: `Cmd/Ctrl+Shift+arrow` on the Web and `Cmd/Ctrl+Alt+arrow` on the desktop move focus to the pane lying in that direction, and `Cmd/Ctrl+Alt+Backspace` closes the focused pane, handing its space and the browser's focus to the pane that takes over. Adjacency is geometric: two panes must share an edge, so a pane that only touches a corner is not one; among the candidates in a direction the nearest wins, and an equal gap prefers the one sharing more of that edge — pressing right from a tall pane beside a column lands in the pane covering most of it. Moving focus also hands the browser's own focus to the target pane's composer, so typing simply continues there. At the edge of the layout a direction key does nothing, but the combination stays the workspace's: it never becomes a caret jump inside the composer. macOS Web uses `Cmd+Shift` rather than `Cmd+Alt`, because Chrome and Firefox spend `Cmd+Option+Left/Right` on switching tabs and `Cmd+Option+Up/Down` on cycling focus between toolbars, and a combination the browser reserves never reaches the page at all. Linux (desktop and Web) carries no default for these five, for the reason under Known Limitations.
+
 **A pane's own split control.** Inside the workspace, every pane's chrome row carries split-right and split-down. Either one splits that pane and puts a new Session in the new half.
 
 The button is hidden on a brand-new empty conversation, because the host renders no header utilities until a conversation has content. The shortcut and the pane controls work there.
@@ -77,6 +79,16 @@ The `main` slot this package claims is a root-scope keyed slot, so the workspace
 
 `PANEL_LIMIT` in `SplitWorkspace.tsx` is `undefined`, which leaves the pane count unbounded. The docking kit's four-pane cap belongs to its planner layer and never reaches `applyOp`, so a split workspace of its own does not inherit it.
 
+### Keyboard navigation between panes
+
+The arrow commands are geometric rather than tree-shaped. `paneRects` measures every pane into a rectangle of the unit square from the same ratios the renderer uses, and `neighborPath` picks the neighbour from those rectangles: an edge must be shared, the nearest candidate wins, and an equal gap prefers the larger overlap. "The pane to the right" therefore means the same thing at any nesting depth, where "the next sibling in the tree" would surprise a reader inside a nested split. Closing is a model operation too: `closeAt` returns both the edited tree and the first pane of the promoted sibling, so focus lands on the pane that took over the space instead of staying on a stale path that addresses a split node.
+
+All five commands act only while the split workspace is the panel on screen. Everywhere else — the Conversation, a settings sheet, any other panel — they resolve to `pass` and hand the combination straight back: on macOS `Cmd+Shift+Left/Right` is "select to the start/end of the line", and the workspace should only own it when there is a pane to move to.
+
+### Why a pane draws the composer, not the Hero
+
+The blank-Session Hero carries the workspace picker, the brand mark, and the agent-preset control. Those slots are `kind: 'single'` in `ui-conversation`: the workspace picker and the brand mark are root-scoped, and the preset is session-maybe, which a blank Session resolves to the root occurrence. A single slot may be rendered in exactly one place at a time, so a second pane drawing the Hero makes those entries fight over the same occurrence — one React "maximum update depth exceeded" per entry, per pane. `panePhase` therefore always reports `hero: false`: a pane draws the composer, which is what a user types into anyway, and the main panel keeps the Hero to itself.
+
 ### Copy and locale
 
 Every visible string lives in the `splitPane` dictionary and reaches components through the standard `t` seat. Chrome controls name themselves through `aria-label` from the same dictionary, so a pane with no visible text still has an accessible name.
@@ -103,6 +115,8 @@ None; this package neither assembles nor sends a provider request.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Panes render the Conversation body, not the Session header.** A pane shows the transcript and composer; the resident header's navigation and View tabs stay with the main panel, because the header belongs to `main.conversation` and is not a reusable Factory. That is also why a pane carries its Session identity in the workspace's own chrome row rather than in a per-pane copy of the header.
+- **An empty pane draws a composer, not the Hero.** The blank-Session Hero carries root-scope single-occurrence slots (the workspace picker and the brand mark), which may be rendered in one place at a time, so the Hero stays with the main panel; a pane gets a composer it can be typed into instead of the large headline.
+- **Linux carries no default binding for the pane commands.** DSH's reservation table rejects arrow and Backspace codes outright on Linux, for both shells, so the directions and Close declare defaults for macOS and Windows only. A Linux user can assign letter or symbol combinations in the shortcut reference.
 - **The header entry is absent on an empty conversation.** Its seat is the header utilities row, which the host renders only once a conversation has content; the shortcut and the sidebar panel entry cover that state.
 - **Retention grows with the pane count.** Each pane holds its own Session reference and history stream; there is no eviction of off-screen panes yet, so a very wide arrangement costs one live stream per pane.
 - **No drag-to-arrange.** Panes are created by the split controls and removed by close; moving an existing pane to another position is not offered.

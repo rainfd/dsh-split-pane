@@ -11,6 +11,9 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 /** Which way a split divides its pane. */
 export type SplitAxis = 'row' | 'column'
 
+/** Which way a pane's neighbour lies, as the keyboard reports it. */
+export type PaneDirection = 'left' | 'right' | 'up' | 'down'
+
 /** One pane: the leaf that renders a Session. */
 export interface PaneLeaf {
   readonly kind: 'pane'
@@ -46,6 +49,23 @@ export interface PaneDescriptor {
   /** The pane's own leaf node. */
   readonly leaf: PaneLeaf
 }
+
+/** One pane's share of the workspace, in normalized coordinates. */
+export interface PaneRect {
+  /** The pane this rectangle describes. */
+  readonly path: readonly number[]
+  /** Left edge, measured from the workspace's left edge. */
+  readonly x: number
+  /** Top edge, measured from the workspace's top edge. */
+  readonly y: number
+  /** Share of the workspace's width. */
+  readonly width: number
+  /** Share of the workspace's height. */
+  readonly height: number
+}
+
+/** Floating-point slack: nested ratios multiply into errors far below this. */
+const TOUCH = 1e-9
 
 /**
  * Build a leaf pane.
@@ -171,6 +191,38 @@ export function paneCount(root: PaneNode): number {
 }
 
 /**
+ * Measure every pane in the workspace, in reading order.
+ *
+ * The rectangles come from the same ratios the renderer uses, in a unit square,
+ * so geometry questions ("which pane is to the right?") can be answered without
+ * a browser or a layout pass.
+ * @param root - tree to measure.
+ * @returns one rectangle per pane, in the same order as `panes`.
+ */
+export function paneRects(root: PaneNode): readonly PaneRect[] {
+  const found: PaneRect[] = []
+  const walk = (
+    node: PaneNode, path: readonly number[], x: number, y: number, width: number, height: number,
+  ): void => {
+    if (node.kind === 'pane') {
+      found.push({ path, x, y, width, height })
+      return
+    }
+    if (node.axis === 'row') {
+      const first = width * node.ratio
+      walk(node.first, [...path, 0], x, y, first, height)
+      walk(node.second, [...path, 1], x + first, y, width - first, height)
+      return
+    }
+    const first = height * node.ratio
+    walk(node.first, [...path, 0], x, y, width, first)
+    walk(node.second, [...path, 1], x, y + first, width, height - first)
+  }
+  walk(root, [], 0, 0, 1, 1)
+  return found
+}
+
+/**
  * Whether a pane may still be added.
  * @param root - tree to test.
  * @param limit - largest pane count allowed; omit for no limit.
@@ -191,6 +243,15 @@ export function samePath(a: readonly number[], b: readonly number[]): boolean {
 }
 
 /**
+ * Render a path as the string a pane is identified by in markup and storage.
+ * @param path - pane path.
+ * @returns the dotted form; the single-pane path renders as an empty string.
+ */
+export function paneKey(path: readonly number[]): string {
+  return path.join('.')
+}
+
+/**
  * The pane a Session occupies, if it is open anywhere.
  * @param root - tree to search.
  * @param sessionId - Session to find.
@@ -207,6 +268,135 @@ export function pathOfSession(root: PaneNode, sessionId: SessionId): readonly nu
  */
 export function shownSessions(root: PaneNode): readonly SessionId[] {
   return panes(root).flatMap(pane => pane.sessionId === undefined ? [] : [pane.sessionId])
+}
+
+/**
+ * Walk down the first child until a pane is reached.
+ * @param root - tree to walk.
+ * @param path - subtree to descend into; an empty path starts at the root.
+ * @returns the path of that subtree's first pane, or `undefined` when the path does not resolve.
+ */
+export function firstLeafPath(root: PaneNode, path: readonly number[]): readonly number[] | undefined {
+  let node = nodeAt(root, path)
+  if (node === undefined) return undefined
+  const walked = [...path]
+  while (node.kind === 'split') {
+    node = node.first
+    walked.push(0)
+  }
+  return walked
+}
+
+/**
+ * Resolve stored focus to a pane that exists.
+ *
+ * Focus is stored as a path, and two states make it address something that is
+ * not a pane: the empty path of a freshly seeded arrangement, whose root is a
+ * split as soon as a second pane exists, and a path whose pane was closed
+ * elsewhere. Both mean "the first pane", which is also what the workspace draws
+ * as focused.
+ * @param root - tree to resolve against.
+ * @param focus - stored focus path.
+ * @returns a path that addresses a pane of this tree.
+ */
+export function focusedPath(root: PaneNode, focus: readonly number[]): readonly number[] {
+  if (leafAt(root, focus) !== undefined) return focus
+  return panes(root)[0]?.path ?? []
+}
+
+/**
+ * Find the pane that lies next to one pane in a direction.
+ *
+ * A neighbour shares an edge and overlaps on the other axis, so a pane beyond a
+ * corner is not one: from the left half of a row, the pane below the right half
+ * is not "down". Among the panes that qualify, the nearest wins, and an equal
+ * gap prefers the larger overlap — which is the pane sharing most of the edge.
+ * @param root - tree to search.
+ * @param from - the pane to move away from; a path that is not a pane finds nothing.
+ * @param direction - which way to look.
+ * @returns the neighbour's path, or `undefined` at the edge of the layout.
+ */
+export function neighborPath(
+  root: PaneNode,
+  from: readonly number[],
+  direction: PaneDirection,
+): readonly number[] | undefined {
+  const rects = paneRects(root)
+  const current = rects.find(rect => samePath(rect.path, from))
+  if (current === undefined) return undefined
+  const alongX = direction === 'left' || direction === 'right'
+  const forward = direction === 'right' || direction === 'down'
+  let best: PaneRect | undefined
+  let bestGap = Number.POSITIVE_INFINITY
+  let bestOverlap = 0
+  for (const rect of rects) {
+    if (samePath(rect.path, current.path)) continue
+    const overlap = alongX
+      ? Math.min(current.y + current.height, rect.y + rect.height) - Math.max(current.y, rect.y)
+      : Math.min(current.x + current.width, rect.x + rect.width) - Math.max(current.x, rect.x)
+    if (overlap <= TOUCH) continue
+    const gap = alongX
+      ? (forward ? rect.x - (current.x + current.width) : current.x - (rect.x + rect.width))
+      : (forward ? rect.y - (current.y + current.height) : current.y - (rect.y + rect.height))
+    if (gap < -TOUCH) continue
+    const closer = gap < bestGap - TOUCH
+    const tied = Math.abs(gap - bestGap) <= TOUCH && overlap > bestOverlap
+    if (closer || tied) {
+      best = rect
+      bestGap = gap
+      bestOverlap = overlap
+    }
+  }
+  return best?.path
+}
+
+/** A tree plus the focus that follows from closing one of its panes. */
+export interface PaneClose {
+  /** The tree with that pane removed. */
+  readonly tree: PaneNode
+  /** The pane that inherits focus: the first pane of the promoted sibling. */
+  readonly focus: readonly number[]
+}
+
+/**
+ * Close one pane and decide which pane takes focus.
+ *
+ * Closing promotes the sibling into the parent's place, so the pane that was
+ * beside the closed one now occupies the closed pane's area — which is where
+ * focus belongs. The last pane cannot be closed: an empty workspace has nothing
+ * to show.
+ * @param root - tree to edit.
+ * @param path - the pane to close.
+ * @returns the edited tree and its focus, or `undefined` when nothing can be closed.
+ */
+export function closeAt(root: PaneNode, path: readonly number[]): PaneClose | undefined {
+  if (leafAt(root, path) === undefined) return undefined
+  if (paneCount(root) <= 1) return undefined
+  const tree = removeAt(root, path)
+  if (tree === root) return undefined
+  return { tree, focus: firstLeafPath(tree, path.slice(0, -1)) ?? [] }
+}
+
+/**
+ * Whether two trees arrange the same panes the same way.
+ *
+ * `reviveTree` rebuilds every node it accepts, so a repaired tree is never the
+ * same reference as the one it was read from. A caller that writes the repair
+ * back needs this value comparison first: writing an identical tree would notify
+ * the arrangement's subscribers on every render, and a store write inside a
+ * render effect is an update loop.
+ * @param a - first tree.
+ * @param b - second tree.
+ * @returns whether both hold the same panes in the same arrangement.
+ */
+export function sameTree(a: PaneNode, b: PaneNode): boolean {
+  if (a.kind === 'pane' || b.kind === 'pane') {
+    return a.kind === 'pane' && b.kind === 'pane' && a.sessionId === b.sessionId
+  }
+  return a.axis === b.axis
+    && a.ratio === b.ratio
+    && sameTree(a.first, b.first)
+    && sameTree(a.second, b.second)
 }
 
 /**

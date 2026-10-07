@@ -1,18 +1,26 @@
+// @vitest-environment jsdom
 /**
  * Plugin registration against a minimal Cordis context.
  *
  * The monorepo's slot test runtime is not usable outside the repository (its
  * published build imports `ui-renderer/src/*`, which is not shipped), so this
  * suite drives `apply` with a stub context. It asserts what the plugin declares
- * and what its two non-sidebar entry points actually do: the conversation
- * header button and the keyboard shortcut both create a Session and select the
- * split panel.
+ * and what its entry points actually do: the conversation header button and the
+ * keyboard shortcuts create, move between, and close panes.
+ *
+ * jsdom is here for the pane commands alone: moving focus also hands the
+ * browser's focus to the pane it lands on.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import { SPLIT_PANEL_ID } from '../src/client/contract/slots.ts'
+import { leaf } from '../src/client/contract/layout.ts'
+import type { SplitPaneActions, SplitPaneState } from '../src/client/stores.ts'
 import { NS, en, zh } from '../src/client/locales.ts'
+
+afterEach(() => { document.body.replaceChildren() })
 
 interface Registration {
   readonly name: string
@@ -37,6 +45,7 @@ interface RegisteredCommand {
  */
 function bench(options: {
   readonly current?: string
+  readonly activePanelId?: string
   readonly workspaces?: readonly {
     workspaceId: string
     path: string
@@ -112,7 +121,13 @@ function bench(options: {
       catalog,
       register: (command: RegisteredCommand) => { commands.push(command); return () => {} },
     },
-    layout: { selectPanel: (id: unknown) => { selectedPanels.push(id) } },
+    layout: {
+      selectPanel: (id: unknown) => { selectedPanels.push(id) },
+      panelInfo: {
+        getSnapshot: () => ({ activePanelId: options.activePanelId ?? null }),
+        subscribe: () => () => {},
+      },
+    },
   } as unknown as Context
 
   apply(stub)
@@ -203,11 +218,13 @@ describe('header entry', () => {
 })
 
 describe('keyboard shortcut', () => {
+  /** The command that opens a split, the only one the header also offers. */
+  const splitCommand = (commands: RegisteredCommand[]): RegisteredCommand =>
+    commands.find(command => command.id === 'splitPane.new')!
+
   it('registers one command with defaults for desktop and web', () => {
     const { commands } = bench()
-    expect(commands).toHaveLength(1)
-    const command = commands[0]!
-    expect(command.id).toBe('splitPane.new')
+    const command = splitCommand(commands)
     expect(Object.keys(command.defaults).sort()).toEqual([
       'desktop:linux', 'desktop:macos', 'desktop:windows', 'web:macos', 'web:windows',
     ])
@@ -242,19 +259,39 @@ describe('keyboard shortcut', () => {
     }
 
     const { commands } = bench()
-    const defaults = commands[0]!.defaults
-    // Linux Web stays unbound, exactly as the host's own commands leave it.
-    expect(Object.keys(defaults).some(key => key.startsWith('web:linux'))).toBe(false)
-    for (const [profile, binding] of Object.entries(defaults)) {
-      const platform = profile.split(':')[1]!
-      if (!profile.startsWith('web:')) continue
-      expect(webAllowed(binding.code, binding.modifiers, platform), profile).toBe(true)
+    for (const command of commands) {
+      // Linux Web stays unbound, exactly as the host's own commands leave it.
+      expect(Object.keys(command.defaults).some(key => key.startsWith('web:linux'))).toBe(false)
+      for (const [profile, binding] of Object.entries(command.defaults)) {
+        if (!profile.startsWith('web:')) continue
+        const platform = profile.split(':')[1]!
+        expect(webAllowed(binding.code, binding.modifiers, platform), `${command.id} ${profile}`).toBe(true)
+      }
+    }
+  })
+
+  it('declares no default the host reserves outside macOS and Windows', () => {
+    // Copied from `bindingIssue`: on Linux, for both shells, these codes are
+    // rejected outright — and a rejected default throws during registration,
+    // which fails the whole plugin rather than dropping one row. Arrow keys are
+    // on that list, which is why the pane commands have no Linux default.
+    const reserved = new Set([
+      'Escape', 'Tab', 'Space', 'Backspace', 'Delete',
+      'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    ])
+    const { commands } = bench()
+    for (const command of commands) {
+      for (const [profile, binding] of Object.entries(command.defaults)) {
+        const [, platform] = profile.split(':')
+        if (platform === 'macos' || platform === 'windows') continue
+        expect(reserved.has(binding.code), `${command.id} ${profile}`).toBe(false)
+      }
     }
   })
 
   it('runs the same open action as the header entry', () => {
     const { commands, selectedPanels } = bench({ current: 'anchor-9' })
-    const resolution = commands[0]!.resolve({})
+    const resolution = splitCommand(commands).resolve({})
     expect(resolution.status).toBe('handled')
     ;(resolution.run as () => void)()
     expect(selectedPanels).toEqual([SPLIT_PANEL_ID])
@@ -262,9 +299,142 @@ describe('keyboard shortcut', () => {
 
   it('blocks with a reason when no Session is open', () => {
     const { commands } = bench()
-    const resolution = commands[0]!.resolve({})
+    const resolution = splitCommand(commands).resolve({})
     expect(resolution.status).toBe('blocked')
     expect(resolution.reason).toBe(`${NS}.shortcut.noWorkspace`)
+  })
+})
+
+describe('pane commands', () => {
+  const id = (commands: RegisteredCommand[], commandId: string): RegisteredCommand => {
+    const found = commands.find(command => command.id === commandId)
+    expect(found, commandId).toBeDefined()
+    return found!
+  }
+  const run = (command: RegisteredCommand): string => {
+    const resolution = command.resolve({})
+    if (resolution.status === 'handled') (resolution.run as () => void)()
+    return resolution.status
+  }
+
+  /**
+   * Read one property off the inject face that carries it.
+   * @param faces - the inject faces `apply` produced.
+   * @param key - the property to take.
+   * @returns that property, typed by the caller; object-shaped faces (the store
+   * handle, the hook sources) are not functions, so `faceWith` cannot find them.
+   */
+  const fromFace = <T>(faces: Record<string, unknown>[], key: string): T => {
+    const found = faces.find(face => face[key] !== undefined)
+    expect(found, key).toBeDefined()
+    return found![key] as T
+  }
+
+  /**
+   * Seed one anchor with a row of as many panes as asked for.
+   * @param faces - the inject faces `apply` produced.
+   * @param count - how many panes to build, the anchor first.
+   * @returns the anchor and read access to the shared arrangement.
+   */
+  function layout(faces: Record<string, unknown>[], count: number) {
+    const actions = fromFace<SplitPaneActions>(faces, 'layoutActions')
+    const hooks = fromFace<{ layout: { getSnapshot: () => SplitPaneState } }>(faces, 'hooks')
+    const anchor = 'anchor-1' as SessionId
+    actions.seed(anchor, leaf(anchor))
+    for (let index = 1; index < count; index += 1) {
+      actions.addPane(anchor, undefined, `pane-${index}` as SessionId, 'row')
+    }
+    return { anchor, actions, state: () => hooks.layout.getSnapshot().byAnchor[anchor] }
+  }
+
+  it('adds four navigation commands and one close command beside the split command', () => {
+    const { commands } = bench()
+    expect(commands.map(command => command.id).sort()).toEqual([
+      'splitPane.close', 'splitPane.focusDown', 'splitPane.focusLeft', 'splitPane.focusRight',
+      'splitPane.focusUp', 'splitPane.new',
+    ])
+  })
+
+  it('binds each direction to its own arrow, with copy the reference can search', () => {
+    const { commands } = bench()
+    const expected = [
+      ['splitPane.focusLeft', 'ArrowLeft', `${NS}.shortcut.focus.left`],
+      ['splitPane.focusRight', 'ArrowRight', `${NS}.shortcut.focus.right`],
+      ['splitPane.focusUp', 'ArrowUp', `${NS}.shortcut.focus.up`],
+      ['splitPane.focusDown', 'ArrowDown', `${NS}.shortcut.focus.down`],
+    ] as const
+    for (const [commandId, code, label] of expected) {
+      const command = id(commands, commandId)
+      expect(command.label()).toBe(label)
+      expect(command.defaults['desktop:macos']).toEqual({ code, modifiers: ['primary', 'alt'] })
+      // macOS browsers reserve Command+Option+arrow for tab and toolbar focus,
+      // and a browser combination never reaches the page; Command+Shift+arrow
+      // is free there and is what the Web side of the convention asks for.
+      expect(command.defaults['web:macos']).toEqual({ code, modifiers: ['primary', 'shift'] })
+      // Windows keeps the Alt form: Control+Shift+arrow selects words in the
+      // composer, and no browser claims Control+Alt+arrow.
+      expect(command.defaults['web:windows']).toEqual({ code, modifiers: ['primary', 'alt'] })
+      expect(Object.keys(command.defaults)).toHaveLength(4)
+      expect([...command.regions]).toEqual(['page', 'editable'])
+    }
+  })
+
+  it('binds close to the platform modifier with Alt and Backspace', () => {
+    const { commands } = bench()
+    const command = id(commands, 'splitPane.close')
+    expect(Object.keys(command.defaults).sort())
+      .toEqual(['desktop:macos', 'desktop:windows', 'web:macos', 'web:windows'])
+    for (const binding of Object.values(command.defaults)) {
+      expect(binding).toEqual({ code: 'Backspace', modifiers: ['primary', 'alt'] })
+    }
+    expect(command.label()).toBe(`${NS}.shortcut.close`)
+  })
+
+  it('passes every pane command through while the workspace is not on screen', () => {
+    // The Conversation, a settings sheet, an embedded page: there the arrows and
+    // Backspace belong to whatever has focus, so nothing may be consumed.
+    const { commands } = bench({ current: 'anchor-1' })
+    for (const command of commands.filter(entry => entry.id !== 'splitPane.new')) {
+      expect(command.resolve({}).status, command.id).toBe('pass')
+    }
+  })
+
+  it('moves focus to the neighbouring pane and hands it the browser focus', () => {
+    const { commands, faces } = bench({ current: 'anchor-1', activePanelId: SPLIT_PANEL_ID })
+    const { anchor, state } = layout(faces, 2)
+    // The pane the command lands on, as the workspace renders it.
+    const frame = document.createElement('section')
+    frame.dataset.splitPanePath = '0'
+    const editable = document.createElement('textarea')
+    frame.append(editable)
+    document.body.append(frame)
+    expect(state()?.focus).toEqual([1])
+
+    expect(run(id(commands, 'splitPane.focusLeft'))).toBe('handled')
+    expect(state()?.focus).toEqual([0])
+    expect(document.activeElement).toBe(editable)
+    // An anchor with no pane that way keeps its focus and consumes the press.
+    expect(run(id(commands, 'splitPane.focusLeft'))).toBe('handled')
+    expect(state()?.focus).toEqual([0])
+  })
+
+  it('closes the focused pane, leaving the sibling in its place', () => {
+    const { commands, faces } = bench({ current: 'anchor-1', activePanelId: SPLIT_PANEL_ID })
+    const { state } = layout(faces, 2)
+    expect(state()?.focus).toEqual([1])
+
+    expect(run(id(commands, 'splitPane.close'))).toBe('handled')
+    const arrangement = state()
+    expect(arrangement?.tree.kind).toBe('pane')
+    expect(arrangement?.focus).toEqual([])
+  })
+
+  it('blocks the close command on the last pane', () => {
+    const { commands, faces } = bench({ current: 'anchor-1', activePanelId: SPLIT_PANEL_ID })
+    layout(faces, 1)
+    const resolution = id(commands, 'splitPane.close').resolve({})
+    expect(resolution.status).toBe('blocked')
+    expect(resolution.reason).toBe(`${NS}.shortcut.lastPane`)
   })
 })
 
