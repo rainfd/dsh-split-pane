@@ -53,6 +53,25 @@ export const inject = [
 /** The command id the header entry's tooltip and the shortcut reference share. */
 const NEW_SPLIT_COMMAND = 'splitPane.new'
 
+/**
+ * Opening a split, one command per direction.
+ *
+ * A binding names a physical combination, so a direction cannot be an argument
+ * to a command: the pair exists as two commands. The second direction is the
+ * first with Shift added, which keeps the two adjacent in the shortcut
+ * reference and stays clear of the browser's own Command+Option combinations.
+ */
+const SPLIT_COMMANDS = [
+  {
+    id: NEW_SPLIT_COMMAND, axis: 'column', label: 'shortcut.label',
+    alias: 'shortcut.alias.split', modifiers: ['primary', 'alt'],
+  },
+  {
+    id: 'splitPane.newRight', axis: 'row', label: 'shortcut.split.right',
+    alias: 'shortcut.alias.splitRight', modifiers: ['primary', 'alt', 'shift'],
+  },
+] as const
+
 /** One command's resolution, as the shortcuts service declares it. */
 type Resolution = ReturnType<ShortcutCommand['resolve']>
 
@@ -142,9 +161,13 @@ export function apply(ctx: Context): void {
     ctx.layout.selectPanel(SPLIT_PANEL_ID as MainPanelId)
   }
 
-  /** Open a split from outside the workspace, on the anchor's focused pane. */
-  const openSplit = (anchorSessionId: string): void => {
-    splitWithNewSession(anchorSessionId as SessionId, undefined, 'column')
+  /**
+   * Open a split from outside the workspace, on the anchor's focused pane.
+   * @param anchorSessionId - the Session the workspace is anchored on.
+   * @param axis - which way the divider runs; omitted stacks the new pane below.
+   */
+  const openSplit = (anchorSessionId: string, axis: 'row' | 'column' = 'column'): void => {
+    splitWithNewSession(anchorSessionId as SessionId, undefined, axis)
   }
 
   /**
@@ -251,33 +274,40 @@ export function apply(ctx: Context): void {
     }),
   }, HeaderEntry))
 
-  // The keyboard path to the same action, listed in the shortcut reference.
-  ctx.effect(() => ctx.shortcuts.register({
-    id: NEW_SPLIT_COMMAND as Parameters<typeof ctx.shortcuts.register>[0]['id'],
-    label: () => t('shortcut.label'),
-    aliases: [t('shortcut.alias.split'), t('shortcut.alias.sideBySide')],
-    // Web takes primary+alt like the host's own navigation commands: every
-    // primary+shift+letter combination worth having is a browser shortcut.
-    defaults: {
-      'desktop:macos': { code: 'KeyS', modifiers: ['primary', 'alt'] },
-      'desktop:windows': { code: 'KeyS', modifiers: ['primary', 'alt'] },
-      'desktop:linux': { code: 'KeyS', modifiers: ['primary', 'alt'] },
-      // No `web:linux` row: the Web binding gate admits only a fixed allowlist
-      // outside macOS/Windows, and the host's own commands leave Linux Web
-      // unbound for the same reason. Users can assign one in the shortcut
-      // reference.
-      'web:macos': { code: 'KeyS', modifiers: ['primary', 'alt'] },
-      'web:windows': { code: 'KeyS', modifiers: ['primary', 'alt'] },
-    },
-    regions: ['page', 'editable'],
-    modals: [],
-    resolve: (context) => {
-      const anchor = ctx.uiSession.adapter.current.getSnapshot().key
-      if (anchor === undefined) return { status: 'blocked', reason: t('shortcut.noWorkspace') }
-      void context
-      return { status: 'handled', run: () => { openSplit(anchor) } }
-    },
-  }), 'ui-split-pane: shortcut')
+  // The keyboard paths to the same action, listed in the shortcut reference:
+  // one per split direction, because a binding names a physical combination and
+  // cannot carry an argument.
+  ctx.effect(() => {
+    const disposers = SPLIT_COMMANDS.map(entry => ctx.shortcuts.register({
+      id: entry.id as ShortcutCommandId,
+      label: () => t(entry.label),
+      aliases: [t(entry.alias), t('shortcut.alias.sideBySide')],
+      // Web takes primary+alt like the host's own navigation commands: every
+      // primary+shift+letter combination worth having is a browser shortcut.
+      // The second direction adds Shift rather than a new letter, which keeps
+      // the pair together in the reference and stays clear of every browser
+      // binding in the Command+Option family.
+      defaults: {
+        'desktop:macos': { code: 'KeyS', modifiers: entry.modifiers },
+        'desktop:windows': { code: 'KeyS', modifiers: entry.modifiers },
+        'desktop:linux': { code: 'KeyS', modifiers: entry.modifiers },
+        // No `web:linux` row: the Web binding gate admits only a fixed allowlist
+        // outside macOS/Windows, and the host's own commands leave Linux Web
+        // unbound for the same reason. Users can assign one in the shortcut
+        // reference.
+        'web:macos': { code: 'KeyS', modifiers: entry.modifiers },
+        'web:windows': { code: 'KeyS', modifiers: entry.modifiers },
+      },
+      regions: ['page', 'editable'],
+      modals: [],
+      resolve: () => {
+        const anchor = ctx.uiSession.adapter.current.getSnapshot().key
+        if (anchor === undefined) return { status: 'blocked', reason: t('shortcut.noWorkspace') }
+        return { status: 'handled', run: () => { openSplit(anchor, entry.axis) } }
+      },
+    }))
+    return () => { for (const dispose of disposers) dispose() }
+  }, 'ui-split-pane: shortcuts')
 
   // Moving and closing panes from the keyboard, listed in the same reference.
   ctx.effect(() => {

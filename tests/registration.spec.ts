@@ -16,7 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import { SPLIT_PANEL_ID } from '../src/client/contract/slots.ts'
-import { leaf } from '../src/client/contract/layout.ts'
+import { leaf, nodeAt } from '../src/client/contract/layout.ts'
 import type { SplitPaneActions, SplitPaneState } from '../src/client/stores.ts'
 import { NS, en, zh } from '../src/client/locales.ts'
 
@@ -347,12 +347,37 @@ describe('pane commands', () => {
     return { anchor, actions, state: () => hooks.layout.getSnapshot().byAnchor[anchor] }
   }
 
-  it('adds four navigation commands and one close command beside the split command', () => {
+  it('adds four navigation commands, a close command, and the second split direction', () => {
     const { commands } = bench()
     expect(commands.map(command => command.id).sort()).toEqual([
       'splitPane.close', 'splitPane.focusDown', 'splitPane.focusLeft', 'splitPane.focusRight',
-      'splitPane.focusUp', 'splitPane.new',
+      'splitPane.focusUp', 'splitPane.new', 'splitPane.newRight',
     ])
+  })
+
+  it('splits in the direction each split command names', () => {
+    const { commands, faces } = bench({ current: 'anchor-1' })
+    const hooks = fromFace<{ layout: { getSnapshot: () => SplitPaneState } }>(faces, 'hooks')
+    const anchor = 'anchor-1' as SessionId
+    const tree = () => hooks.layout.getSnapshot().byAnchor[anchor]?.tree
+
+    // The header button and `Cmd/Ctrl+Alt+S` stack the new pane below...
+    const down = id(commands, 'splitPane.new')
+    expect(down.label()).toBe(`${NS}.shortcut.label`)
+    expect(down.defaults['web:macos']).toEqual({ code: 'KeyS', modifiers: ['primary', 'alt'] })
+    expect(run(down)).toBe('handled')
+    expect(tree()?.kind === 'split' && tree()?.axis).toBe('column')
+
+    // ...and its Shift twin puts the new pane beside the focused one.
+    const right = id(commands, 'splitPane.newRight')
+    expect(right.label()).toBe(`${NS}.shortcut.split.right`)
+    // Three modifiers: the Web gate admits them on macOS and Windows, and the
+    // browser's own Command+Option family is untouched by adding Shift.
+    expect(right.defaults['web:macos']).toEqual({ code: 'KeyS', modifiers: ['primary', 'alt', 'shift'] })
+    expect(right.defaults['desktop:linux']).toEqual({ code: 'KeyS', modifiers: ['primary', 'alt', 'shift'] })
+    expect(run(right)).toBe('handled')
+    const nested = tree() === undefined ? undefined : nodeAt(tree()!, [1])
+    expect(nested?.kind === 'split' && nested.axis).toBe('row')
   })
 
   it('binds each direction to its own arrow, with copy the reference can search', () => {
@@ -394,7 +419,8 @@ describe('pane commands', () => {
     // The Conversation, a settings sheet, an embedded page: there the arrows and
     // Backspace belong to whatever has focus, so nothing may be consumed.
     const { commands } = bench({ current: 'anchor-1' })
-    for (const command of commands.filter(entry => entry.id !== 'splitPane.new')) {
+    const splitCommands = new Set(['splitPane.new', 'splitPane.newRight'])
+    for (const command of commands.filter(entry => !splitCommands.has(entry.id))) {
       expect(command.resolve({}).status, command.id).toBe('pass')
     }
   })
