@@ -249,12 +249,24 @@ export function apply(ctx: Context): void {
   })
 
   ctx.slots.inject('main', function* () {
+    /**
+     * The frame's header opt-in for this panel.
+     *
+     * `conversationHeader` tells the shell frame to keep the Conversation
+     * header — the Session title, its View tabs and the utilities row — above
+     * this panel, so entering the workspace no longer takes them away. The
+     * installed `ui-slots` types predate the field (it ships with the frame
+     * change), so it is attached as an already-widened object rather than
+     * written inline; the frame reads it off the seat's options either way.
+     */
+    const headerOptIn = { conversationHeader: true } as const
     yield ctx.slots.register({
       name: 'main',
       key: SPLIT_PANEL_ID,
       locale: NS,
       children: { 'split.pane': { kind: 'single', scope: 'session' } },
       inject: injected,
+      ...headerOptIn,
     }, SplitWorkspace)
     yield ctx.slots.register({
       name: 'split.pane',
