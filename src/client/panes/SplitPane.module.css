@@ -146,6 +146,13 @@
   opacity: 0.4;
 }
 
+/* The split glyphs draw a divided panel rather than an arrow, so they need a
+   fixed box inside the 22px control. */
+.action svg {
+  width: 15px;
+  height: 15px;
+}
+
 /* A focused pane gets the accent seam so several panes stay distinguishable. */
 .pane[data-split-pane-focused] .chrome {
   border-bottom-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);

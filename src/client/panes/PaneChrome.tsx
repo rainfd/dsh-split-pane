@@ -7,6 +7,7 @@
  */
 import type { ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SplitDownGlyph, SplitRightGlyph } from './PaneGlyphs.tsx'
 import css from './SplitPane.module.css'
 
 /** Copy for one pane's chrome. */
@@ -57,20 +58,23 @@ export function PaneChrome({
           type="button"
           className={css.action}
           aria-label={labels.splitRight}
+          title={labels.splitRight}
           disabled={!canSplit}
           onClick={() => { onSplit('row') }}
-        >⬌</button>
+        ><SplitRightGlyph /></button>
         <button
           type="button"
           className={css.action}
           aria-label={labels.splitDown}
+          title={labels.splitDown}
           disabled={!canSplit}
           onClick={() => { onSplit('column') }}
-        >⬍</button>
+        ><SplitDownGlyph /></button>
         <button
           type="button"
           className={css.action}
           aria-label={labels.close}
+          title={labels.close}
           onClick={onClose}
         >×</button>
       </div>

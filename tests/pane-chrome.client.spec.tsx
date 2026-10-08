@@ -56,6 +56,24 @@ describe('pane chrome', () => {
     expect(view.getByRole('button', { name: 'Close this pane' })).toBeDefined()
   })
 
+  it('draws each control, and names it on hover as well as for assistive tech', () => {
+    // The axes used to be arrow glyphs, which said nothing about which way the
+    // workspace ends up divided; they are panel glyphs now, and the tooltip
+    // carries the words.
+    const { view } = bench()
+    const buttons = ['Split right', 'Split down', 'Close this pane']
+      .map(name => view.getByRole('button', { name }) as HTMLButtonElement)
+    for (const button of buttons) {
+      expect(button.getAttribute('title')).toBe(button.getAttribute('aria-label'))
+    }
+    // Both split controls draw the divided-panel glyph, and they differ: a
+    // vertical seam against a horizontal one.
+    const seams = buttons.slice(0, 2).map(button => button.querySelector('path')?.getAttribute('d'))
+    expect(seams[0]).toBeDefined()
+    expect(seams[1]).toBeDefined()
+    expect(seams[0]).not.toBe(seams[1])
+  })
+
   it('keeps every control on an empty pane', () => {
     // The regression this covers: a split seats an empty pane, so losing these
     // controls would strand that pane with no way to split or close it.
