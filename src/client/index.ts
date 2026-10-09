@@ -162,6 +162,40 @@ export function apply(ctx: Context): void {
   }
 
   /**
+   * Create a Session in one Workspace and seat it in one pane.
+   *
+   * A pane's Workspace picker needs this: the host's own picker lives on the
+   * blank-Session Hero, which a pane never renders, so this is the pane's only
+   * route to choosing where its conversation lives. The Session is created
+   * first and seated when its id resolves — the same ordering a split uses — so
+   * the pane never shows the anchor's Session in the meantime.
+   * @param anchor - the Session the workspace is anchored on.
+   * @param path - the pane that asked for the Workspace.
+   * @param workspaceId - the Workspace to create the Session in.
+   */
+  const openWorkspaceIn = (
+    anchor: SessionId, path: readonly number[], workspaceId: string,
+  ): void => {
+    const target = ctx.workspaces.list.getSnapshot().items
+      .find(item => item.workspaceId === workspaceId)
+    if (target === undefined) return
+    // Reuse the blank Session already aimed at that Workspace, exactly as New
+    // Session does; creating a fresh one every time would leave a trail of
+    // identical blank Sessions behind the picker.
+    const reusable = target.sessionIds
+      .map(id => ctx.sessions.list.getSnapshot().byId[id])
+      .find(row => row?.blank === true)
+    if (reusable !== undefined) {
+      layout.actions.showInPane(anchor, path, reusable.id)
+      return
+    }
+    void ctx.sessions.create({ workspaceId: target.workspaceId }).then(
+      (created) => { layout.actions.showInPane(anchor, path, created) },
+      (reason: unknown) => { console.warn('split pane: open workspace failed:', reason) },
+    )
+  }
+
+  /**
    * Open a split from outside the workspace, on the anchor's focused pane.
    * @param anchorSessionId - the Session the workspace is anchored on.
    */
@@ -245,6 +279,7 @@ export function apply(ctx: Context): void {
     sessions: ctx.sessions,
     layoutActions: layout.actions,
     splitWithNewSession,
+    openWorkspaceIn,
   })
 
   ctx.slots.inject('main', function* () {

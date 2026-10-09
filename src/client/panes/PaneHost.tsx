@@ -37,26 +37,55 @@ export interface PaneHostProps {
 export function PaneHost({
   sessionId, occurrenceKey, retain, SessionProvider, renderBody, empty,
 }: PaneHostProps): ReactNode {
-  const [reference, setReference] = useState<SessionReference | undefined>()
-
-  useEffect(() => {
-    if (sessionId === undefined) {
-      setReference(undefined)
-      return
-    }
-    const controller = new AbortController()
-    const next = retain(sessionId, controller.signal)
-    setReference(next)
-    return () => {
-      controller.abort()
-      next.release()
-      setReference(current => (current === next ? undefined : current))
-    }
-  }, [retain, sessionId, occurrenceKey])
-
-  if (sessionId === undefined || reference === undefined) return <>{empty}</>
+  if (sessionId === undefined) return <>{empty}</>
   return (
-    <SessionProvider session={reference} empty={() => <>{empty}</>}>
+    // Keyed by the Session, so re-pointing the pane unmounts the old body and
+    // the reference it was rendering before the new one mounts. React runs the
+    // old cleanup and the new setup in one commit, and a released reference
+    // throws on `binding`: without the key the previous body could still render
+    // a frame against the reference this pane just let go.
+    <PaneSession
+      key={`${occurrenceKey}:${sessionId}`}
+      sessionId={sessionId}
+      retain={retain}
+      SessionProvider={SessionProvider}
+      renderBody={renderBody}
+      empty={empty}
+    />
+  )
+}
+
+/** Props of one pane's retained Session occurrence. */
+interface PaneSessionProps {
+  readonly sessionId: string
+  readonly retain: PaneHostProps['retain']
+  readonly SessionProvider: SessionProviderComponent
+  readonly renderBody: () => ReactNode
+  readonly empty: ReactNode
+}
+
+/**
+ * Hold one Session generation for as long as this occurrence is mounted.
+ * @param props - the Session to retain, the retention face, and render seats.
+ * @returns the pane body inside a `SessionProvider`.
+ */
+function PaneSession({
+  sessionId, retain, SessionProvider, renderBody, empty,
+}: PaneSessionProps): ReactNode {
+  const [reference] = useState(() => {
+    const controller = new AbortController()
+    const held = retain(sessionId, controller.signal)
+    // Released by the unmount below; the controller only cancels a pending
+    // open, so it is aborted with the same boundary.
+    return { held, controller }
+  })
+  useEffect(() => () => {
+    reference.controller.abort()
+    reference.held.release()
+  }, [reference])
+
+  return (
+    <SessionProvider session={reference.held} empty={() => <>{empty}</>}>
       {renderBody()}
     </SessionProvider>
   )

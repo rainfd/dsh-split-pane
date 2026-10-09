@@ -62,6 +62,10 @@ export interface SplitWorkspaceInjected {
   readonly splitWithNewSession: (
     anchor: SessionId, path: readonly number[] | undefined, axis: 'row' | 'column',
   ) => void
+  /** Create a Session in one Workspace and seat it in this pane. */
+  readonly openWorkspaceIn: (
+    anchor: SessionId, path: readonly number[], workspaceId: string,
+  ) => void
 }
 
 /** Props of the workspace panel, including the framework-standard SessionProvider seat. */
@@ -88,10 +92,11 @@ export type SplitWorkspaceProps =
  */
 export function SplitWorkspace({
   useSessions, useCurrent, useArchived, useLayout, sessions, renderSlot, SessionProvider,
-  layoutActions: actions, splitWithNewSession: splitNew, t,
+  layoutActions: actions, splitWithNewSession: splitNew, openWorkspaceIn, t,
 }: SplitWorkspaceProps): ReactNode {
   const current = useCurrent(binding => binding.key)
   const archived = useArchived(snapshot => snapshot.archivedSessionIds)
+  const workspaces = useArchived(snapshot => snapshot)
   const list = useSessions(state => state)
 
   const sessionId = current as SessionId | undefined
@@ -101,9 +106,26 @@ export function SplitWorkspace({
     () => list.ids.filter(id => !archived.includes(id)),
     [list.ids, archived],
   )
-  const choices = useMemo(
-    () => ids.map(id => ({ id, title: list.byId[id]?.displayTitle ?? id })),
-    [ids, list.byId],
+  // Rows are named the way the sidebar names them: a blank Session is the New
+  // Session shape rather than a title, and several of them are told apart by
+  // their Workspace, because their automatic titles are identical.
+  const workspaceTitles = useMemo(() => {
+    const titles: Record<string, string> = {}
+    for (const item of workspaces.items) {
+      for (const id of item.sessionIds) titles[id] = item.title
+    }
+    return titles
+  }, [workspaces.items])
+  const choices = useMemo(() => ids.map(id => {
+    const row = list.byId[id]
+    const blank = row?.blank === true
+    const base = blank ? t('pane.newSession') : (row?.title ?? row?.displayTitle ?? id)
+    const workspace = workspaceTitles[id]
+    return { id, blank, title: workspace === undefined ? base : `${base} · ${workspace}` }
+  }), [ids, list.byId, workspaceTitles, t])
+  const workspaceChoices = useMemo(
+    () => workspaces.items.map(item => ({ id: item.workspaceId, title: item.title })),
+    [workspaces.items],
   )
 
   const known = useMemo(() => new Set(ids), [ids])
@@ -152,6 +174,7 @@ export function SplitWorkspace({
     [sessions],
   )
 
+  /** The Workspace roster a pane's picker offers, and the pane's own bindings. */
   const renderPane = useCallback((path: readonly number[]): ReactNode => {
     if (tree === undefined || anchor === undefined) return null
     const pane = panes(tree).find(entry => samePath(entry.path, path))
@@ -166,7 +189,9 @@ export function SplitWorkspace({
       onSplit: () => { splitNew(anchor, path, 'row') },
       onClose: () => { actions.closePane(anchor, path) },
       choices,
+      workspaces: workspaceChoices,
       onSelect: (next) => { actions.showInPane(anchor, path, next) },
+      onOpenWorkspace: (workspaceId) => { openWorkspaceIn(anchor, path, workspaceId) },
     }
     return (
       <PaneFrame
@@ -180,11 +205,14 @@ export function SplitWorkspace({
             sessionId={paneSession}
             canSplit={canSplit}
             choices={choices}
+            workspaces={workspaceChoices}
             onSelect={owner.onSelect}
+            onOpenWorkspace={owner.onOpenWorkspace}
             onSplit={owner.onSplit}
             onClose={owner.onClose}
             labels={{
               select: t('pane.selectSession'),
+              chooseWorkspace: t('pane.chooseWorkspace'),
               close: t('pane.close'),
               splitRight: t('pane.split.right'),
             }}
@@ -197,14 +225,22 @@ export function SplitWorkspace({
             retain={retain}
             SessionProvider={SessionProvider}
             renderBody={() => renderSlot('split.pane', owner)}
-            empty={<EmptyPane choices={choices} label={t('pane.selectSession')} onSelect={owner.onSelect} />}
+            empty={(
+              <EmptyPane
+                choices={choices}
+                workspaces={workspaceChoices}
+                labels={{ select: t('pane.selectSession'), chooseWorkspace: t('pane.chooseWorkspace') }}
+                onSelect={owner.onSelect}
+                onOpenWorkspace={owner.onOpenWorkspace}
+              />
+            )}
           />
         )}
       />
     )
   }, [
-    tree, anchor, activePath, canSplit, choices, actions, splitNew, retain,
-    SessionProvider, renderSlot, t,
+    tree, anchor, activePath, canSplit, choices, workspaceChoices, actions, splitNew,
+    openWorkspaceIn, retain, SessionProvider, renderSlot, t,
   ])
 
   if (tree === undefined || anchor === undefined) return <div className={css.root} data-split-pane-root="" />

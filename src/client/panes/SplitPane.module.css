@@ -191,9 +191,18 @@
 .empty {
   display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   padding: 12px;
+}
+
+/* Says what the pickers below it are for: an empty pane has no header to name
+   the Session, so the prompt carries that. */
+.emptyHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
 }
 
 .emptySelect {

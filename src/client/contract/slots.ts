@@ -43,9 +43,28 @@ export interface SplitPaneOwnerProps {
   /** Close this pane, promoting its sibling. */
   readonly onClose: () => void
   /** Sessions eligible for this pane's selector, in workspace order. */
-  readonly choices: readonly { readonly id: SessionId; readonly title: string }[]
+  readonly choices: readonly PaneChoice[]
+  /** Workspaces a pane can open a fresh Session in, in sidebar order. */
+  readonly workspaces: readonly PaneWorkspace[]
   /** Show another Session, or none, in this pane. */
   readonly onSelect: (sessionId: SessionId | undefined) => void
+  /** Create a Session in one Workspace and show it here. */
+  readonly onOpenWorkspace: (workspaceId: string) => void
+}
+
+/** One Session a pane may be pointed at. */
+export interface PaneChoice {
+  readonly id: SessionId
+  /** The picker's own text for this row, already disambiguated. */
+  readonly title: string
+  /** Whether the Session is still the blank New Session shape. */
+  readonly blank: boolean
+}
+
+/** One Workspace a pane may open a Session in. */
+export interface PaneWorkspace {
+  readonly id: string
+  readonly title: string
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

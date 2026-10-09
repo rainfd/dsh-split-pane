@@ -16,12 +16,15 @@ afterEach(cleanup)
 
 const sid = (value: string): SessionId => value as SessionId
 const LABELS = {
-  select: 'Select a session', close: 'Close this pane', splitRight: 'Split right',
+  select: 'Select a session', chooseWorkspace: 'New session in workspace',
+  close: 'Close this pane', splitRight: 'Split right',
 }
+// Titles arrive already disambiguated: the workspace layer composes them.
 const CHOICES = [
-  { id: sid('alpha'), title: 'Alpha' },
-  { id: sid('beta'), title: 'Beta' },
+  { id: sid('alpha'), title: 'Alpha · verify', blank: false },
+  { id: sid('beta'), title: 'Beta', blank: true },
 ]
+const WORKSPACES = [{ id: 'ws-1', title: 'verify' }]
 
 /**
  * Render one chrome row.
@@ -30,6 +33,7 @@ const CHOICES = [
  */
 function bench(overrides: Partial<Parameters<typeof PaneChrome>[0]> = {}) {
   const onSelect = vi.fn()
+  const onOpenWorkspace = vi.fn()
   const onSplit = vi.fn()
   const onClose = vi.fn()
   const view = render(
@@ -37,14 +41,16 @@ function bench(overrides: Partial<Parameters<typeof PaneChrome>[0]> = {}) {
       sessionId={sid('alpha')}
       canSplit
       choices={CHOICES}
+      workspaces={WORKSPACES}
       labels={LABELS}
       onSelect={onSelect}
+      onOpenWorkspace={onOpenWorkspace}
       onSplit={onSplit}
       onClose={onClose}
       {...overrides}
     />,
   )
-  return { view, onSelect, onSplit, onClose }
+  return { view, onSelect, onOpenWorkspace, onSplit, onClose }
 }
 
 describe('pane chrome', () => {
@@ -89,16 +95,29 @@ describe('pane chrome', () => {
     expect((view.getByRole('button', { name: 'Close this pane' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('lists the eligible Sessions with the pane current one selected', () => {
+  it('lists the eligible Sessions under the names the picker composed', () => {
     const { view } = bench()
-    const select = view.getByRole('combobox') as HTMLSelectElement
-    expect([...select.options].map(option => option.textContent)).toEqual(['—', 'Alpha', 'Beta'])
+    const select = view.getByRole('combobox', { name: LABELS.select }) as HTMLSelectElement
+    expect([...select.options].map(option => option.textContent))
+      .toEqual(['—', 'Alpha · verify', 'Beta'])
     expect(select.value).toBe('alpha')
+  })
+
+  it('offers the Workspaces a pane can open a Session in', () => {
+    const { view, onOpenWorkspace } = bench()
+    const select = view.getByRole('combobox', { name: LABELS.chooseWorkspace }) as HTMLSelectElement
+    expect([...select.options].map(option => option.textContent))
+      .toEqual([LABELS.chooseWorkspace, 'verify'])
+    // It is an action, not a selection: choosing resets and asks for a Session
+    // in that Workspace.
+    fireEvent.change(select, { target: { value: 'ws-1' } })
+    expect(onOpenWorkspace).toHaveBeenCalledWith('ws-1')
+    expect(select.value).toBe('')
   })
 
   it('reports a Session choice, and none for the placeholder', () => {
     const { view, onSelect } = bench()
-    const select = view.getByRole('combobox')
+    const select = view.getByRole('combobox', { name: LABELS.select })
     fireEvent.change(select, { target: { value: 'beta' } })
     expect(onSelect).toHaveBeenCalledWith('beta')
     fireEvent.change(select, { target: { value: '' } })
