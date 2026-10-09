@@ -39,9 +39,34 @@ export function PaneBody({ useSession, useConversation, renderFactorySlot }: Pan
   const { phase, hero } = panePhase(session, conversation)
   return (
     <div className={css.paneBody} data-split-pane-body="">
-      {renderFactorySlot('conversation.content', {
-        variant: 'embedded', phase, hero,
-      })}
+      <PaneHeader renderFactorySlot={renderFactorySlot} />
+      <div className={css.paneContent} data-split-pane-content="">
+        {renderFactorySlot('conversation.content', {
+          variant: 'embedded', phase, hero,
+        })}
+      </div>
     </div>
   )
+}
+
+/**
+ * Render one pane's Conversation header.
+ *
+ * Each pane draws the Session's own header — title, mode, View tabs and the
+ * utilities row — so a split keeps the interface it had before it was split,
+ * rather than trading the header for bare chrome rows.
+ *
+ * The header became a Component Factory on the shell side precisely to make
+ * this possible: a slot may only be rendered by the entry that declared it, and
+ * a pane is another render position. The locally built shell carries the
+ * definition while the published `dsh-client-ui-conversation` types predate it,
+ * so the name is widened once here.
+ * @param props - this occurrence's Session kit and render seats.
+ * @returns the header occurrence for the pane's own Session.
+ */
+export function PaneHeader({ renderFactorySlot }: Pick<PaneBodyProps, 'renderFactorySlot'>): ReactNode {
+  const renderHeader = renderFactorySlot as unknown as (
+    name: 'conversation.header', input: object,
+  ) => ReactNode
+  return <div className={css.paneHeader} data-split-pane-header="">{renderHeader('conversation.header', {})}</div>
 }

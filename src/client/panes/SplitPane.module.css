@@ -158,6 +158,25 @@
   border-bottom-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
+/* The Session's own Conversation header, drawn per pane. It sits between this
+   pane's controls and the content, exactly where the main panel draws it, so a
+   split keeps the interface it had before it was split. */
+.paneHeader {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  flex-direction: column;
+}
+
+/* The Conversation content below that header: the pane's scrollport. */
+.paneContent {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
 /* The body is unpadded: the Conversation reaches the pane's edges and draws its
    own insets, exactly as it does in the main panel. */
 .body {

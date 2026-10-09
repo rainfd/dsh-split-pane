@@ -163,7 +163,7 @@ export function SplitWorkspace({
       canSplit,
       // A pane's own split control behaves exactly like the header's: the new
       // half is a new Session, not a second view of this one.
-      onSplit: (axis) => { splitNew(anchor, path, axis) },
+      onSplit: () => { splitNew(anchor, path, 'row') },
       onClose: () => { actions.closePane(anchor, path) },
       choices,
       onSelect: (next) => { actions.showInPane(anchor, path, next) },
@@ -187,7 +187,6 @@ export function SplitWorkspace({
               select: t('pane.selectSession'),
               close: t('pane.close'),
               splitRight: t('pane.split.right'),
-              splitDown: t('pane.split.down'),
             }}
           />
         )}

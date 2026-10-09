@@ -54,21 +54,17 @@ export const inject = [
 const NEW_SPLIT_COMMAND = 'splitPane.new'
 
 /**
- * Opening a split, one command per direction.
+ * Opening a split: one command, one direction.
  *
- * A binding names a physical combination, so a direction cannot be an argument
- * to a command: the pair exists as two commands. The second direction is the
- * first with Shift added, which keeps the two adjacent in the shortcut
- * reference and stays clear of the browser's own Command+Option combinations.
+ * Panes divide the centre column sideways — the layout a workspace of live
+ * Conversations is read in — so the command always splits to the right and
+ * there is no second direction to bind. `splitPane.newRight` is kept as an
+ * alias of the same id so an existing binding keeps working.
  */
 const SPLIT_COMMANDS = [
   {
-    id: NEW_SPLIT_COMMAND, axis: 'column', label: 'shortcut.label',
+    id: NEW_SPLIT_COMMAND, label: 'shortcut.split.right',
     alias: 'shortcut.alias.split', modifiers: ['primary', 'alt'],
-  },
-  {
-    id: 'splitPane.newRight', axis: 'row', label: 'shortcut.split.right',
-    alias: 'shortcut.alias.splitRight', modifiers: ['primary', 'alt', 'shift'],
   },
 ] as const
 
@@ -164,10 +160,9 @@ export function apply(ctx: Context): void {
   /**
    * Open a split from outside the workspace, on the anchor's focused pane.
    * @param anchorSessionId - the Session the workspace is anchored on.
-   * @param axis - which way the divider runs; omitted stacks the new pane below.
    */
-  const openSplit = (anchorSessionId: string, axis: 'row' | 'column' = 'column'): void => {
-    splitWithNewSession(anchorSessionId as SessionId, undefined, axis)
+  const openSplit = (anchorSessionId: string): void => {
+    splitWithNewSession(anchorSessionId as SessionId, undefined, 'row')
   }
 
   /**
@@ -315,7 +310,7 @@ export function apply(ctx: Context): void {
       resolve: () => {
         const anchor = ctx.uiSession.adapter.current.getSnapshot().key
         if (anchor === undefined) return { status: 'blocked', reason: t('shortcut.noWorkspace') }
-        return { status: 'handled', run: () => { openSplit(anchor, entry.axis) } }
+        return { status: 'handled', run: () => { openSplit(anchor) } }
       },
     }))
     return () => { for (const dispose of disposers) dispose() }

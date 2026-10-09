@@ -25,16 +25,3 @@ export function SplitRightGlyph(): ReactNode {
     </svg>
   )
 }
-
-/**
- * Draw a pane divided into two rows: the result of splitting downwards.
- * @returns the glyph element.
- */
-export function SplitDownGlyph(): ReactNode {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} aria-hidden>
-      <rect x="1.5" y="3" width="13" height="10" rx="1.5" />
-      <path d="M1.5 8h13" />
-    </svg>
-  )
-}

@@ -39,7 +39,7 @@ export interface SplitPaneOwnerProps {
   /** Whether another pane may be added. */
   readonly canSplit: boolean
   /** Split this pane, seating a new empty pane after it. */
-  readonly onSplit: (axis: 'row' | 'column') => void
+  readonly onSplit: () => void
   /** Close this pane, promoting its sibling. */
   readonly onClose: () => void
   /** Sessions eligible for this pane's selector, in workspace order. */

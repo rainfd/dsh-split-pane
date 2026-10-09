@@ -16,8 +16,7 @@ afterEach(cleanup)
 
 const sid = (value: string): SessionId => value as SessionId
 const LABELS = {
-  select: 'Select a session', close: 'Close this pane',
-  splitRight: 'Split right', splitDown: 'Split down',
+  select: 'Select a session', close: 'Close this pane', splitRight: 'Split right',
 }
 const CHOICES = [
   { id: sid('alpha'), title: 'Alpha' },
@@ -49,29 +48,22 @@ function bench(overrides: Partial<Parameters<typeof PaneChrome>[0]> = {}) {
 }
 
 describe('pane chrome', () => {
-  it('offers both split axes and a close control for a Session pane', () => {
+  it('offers the sideways split and a close control for a Session pane', () => {
     const { view } = bench()
     expect(view.getByRole('button', { name: 'Split right' })).toBeDefined()
-    expect(view.getByRole('button', { name: 'Split down' })).toBeDefined()
     expect(view.getByRole('button', { name: 'Close this pane' })).toBeDefined()
+    // Panes divide the centre column sideways; there is no vertical control.
+    expect(view.queryByRole('button', { name: 'Split down' })).toBeNull()
   })
 
-  it('draws each control, and names it on hover as well as for assistive tech', () => {
-    // The axes used to be arrow glyphs, which said nothing about which way the
-    // workspace ends up divided; they are panel glyphs now, and the tooltip
-    // carries the words.
+  it('draws the control, and names it on hover as well as for assistive tech', () => {
+    // The control used to be an arrow glyph, which said nothing about which way
+    // the workspace ends up divided; it draws the result now — a panel with a
+    // vertical seam — and the tooltip carries the words.
     const { view } = bench()
-    const buttons = ['Split right', 'Split down', 'Close this pane']
-      .map(name => view.getByRole('button', { name }) as HTMLButtonElement)
-    for (const button of buttons) {
-      expect(button.getAttribute('title')).toBe(button.getAttribute('aria-label'))
-    }
-    // Both split controls draw the divided-panel glyph, and they differ: a
-    // vertical seam against a horizontal one.
-    const seams = buttons.slice(0, 2).map(button => button.querySelector('path')?.getAttribute('d'))
-    expect(seams[0]).toBeDefined()
-    expect(seams[1]).toBeDefined()
-    expect(seams[0]).not.toBe(seams[1])
+    const button = view.getByRole('button', { name: 'Split right' }) as HTMLButtonElement
+    expect(button.getAttribute('title')).toBe(button.getAttribute('aria-label'))
+    expect(button.querySelector('path')?.getAttribute('d')).toBe('M8 3v10')
   })
 
   it('keeps every control on an empty pane', () => {
@@ -82,20 +74,16 @@ describe('pane chrome', () => {
     expect(right).toBeDefined()
     expect((right as HTMLButtonElement).disabled).toBe(false)
     fireEvent.click(right)
-    expect(onSplit).toHaveBeenCalledWith('row')
-    fireEvent.click(view.getByRole('button', { name: 'Split down' }))
-    expect(onSplit).toHaveBeenCalledWith('column')
+    expect(onSplit).toHaveBeenCalledTimes(1)
     fireEvent.click(view.getByRole('button', { name: 'Close this pane' }))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('disables both split controls once another pane is not allowed', () => {
+  it('disables the split control once another pane is not allowed', () => {
     const { view, onSplit } = bench({ canSplit: false })
-    for (const name of ['Split right', 'Split down']) {
-      const button = view.getByRole('button', { name }) as HTMLButtonElement
-      expect(button.disabled).toBe(true)
-      fireEvent.click(button)
-    }
+    const button = view.getByRole('button', { name: 'Split right' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    fireEvent.click(button)
     expect(onSplit).not.toHaveBeenCalled()
     // Close stays available: the budget limits creating panes, not removing them.
     expect((view.getByRole('button', { name: 'Close this pane' }) as HTMLButtonElement).disabled).toBe(false)

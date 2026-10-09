@@ -222,7 +222,7 @@ describe('keyboard shortcut', () => {
   const splitCommand = (commands: RegisteredCommand[]): RegisteredCommand =>
     commands.find(command => command.id === 'splitPane.new')!
 
-  it('registers one command with defaults for desktop and web', () => {
+  it('registers one split command with defaults for desktop and web', () => {
     const { commands } = bench()
     const command = splitCommand(commands)
     expect(Object.keys(command.defaults).sort()).toEqual([
@@ -236,7 +236,7 @@ describe('keyboard shortcut', () => {
       expect(binding.modifiers.length).toBeGreaterThan(0)
     }
     // The header tooltip and the shortcut reference read the same labels.
-    expect(command.label()).toBe(`${NS}.shortcut.label`)
+    expect(command.label()).toBe(`${NS}.shortcut.split.right`)
     expect([...command.aliases]).toEqual([`${NS}.shortcut.alias.split`, `${NS}.shortcut.alias.sideBySide`])
   })
 
@@ -347,35 +347,30 @@ describe('pane commands', () => {
     return { anchor, actions, state: () => hooks.layout.getSnapshot().byAnchor[anchor] }
   }
 
-  it('adds four navigation commands, a close command, and the second split direction', () => {
+  it('adds four navigation commands and a close command beside the split command', () => {
     const { commands } = bench()
     expect(commands.map(command => command.id).sort()).toEqual([
       'splitPane.close', 'splitPane.focusDown', 'splitPane.focusLeft', 'splitPane.focusRight',
-      'splitPane.focusUp', 'splitPane.new', 'splitPane.newRight',
+      'splitPane.focusUp', 'splitPane.new',
     ])
   })
 
-  it('splits in the direction each split command names', () => {
+  it('splits sideways, whichever entry point is used', () => {
     const { commands, faces } = bench({ current: 'anchor-1' })
     const hooks = fromFace<{ layout: { getSnapshot: () => SplitPaneState } }>(faces, 'hooks')
     const anchor = 'anchor-1' as SessionId
     const tree = () => hooks.layout.getSnapshot().byAnchor[anchor]?.tree
 
-    // The header button and `Cmd/Ctrl+Alt+S` stack the new pane below...
-    const down = id(commands, 'splitPane.new')
-    expect(down.label()).toBe(`${NS}.shortcut.label`)
-    expect(down.defaults['web:macos']).toEqual({ code: 'KeyS', modifiers: ['primary', 'alt'] })
-    expect(run(down)).toBe('handled')
-    expect(tree()?.kind === 'split' && tree()?.axis).toBe('column')
+    // The header button and `Cmd/Ctrl+Alt+S` put the new pane beside this one:
+    // a workspace of live Conversations is read side by side.
+    const split = id(commands, 'splitPane.new')
+    expect(split.label()).toBe(`${NS}.shortcut.split.right`)
+    expect(split.defaults['web:macos']).toEqual({ code: 'KeyS', modifiers: ['primary', 'alt'] })
+    expect(run(split)).toBe('handled')
+    expect(tree()?.kind === 'split' && tree()?.axis).toBe('row')
 
-    // ...and its Shift twin puts the new pane beside the focused one.
-    const right = id(commands, 'splitPane.newRight')
-    expect(right.label()).toBe(`${NS}.shortcut.split.right`)
-    // Three modifiers: the Web gate admits them on macOS and Windows, and the
-    // browser's own Command+Option family is untouched by adding Shift.
-    expect(right.defaults['web:macos']).toEqual({ code: 'KeyS', modifiers: ['primary', 'alt', 'shift'] })
-    expect(right.defaults['desktop:linux']).toEqual({ code: 'KeyS', modifiers: ['primary', 'alt', 'shift'] })
-    expect(run(right)).toBe('handled')
+    // A second split extends the focused pane the same way, never stacking.
+    expect(run(split)).toBe('handled')
     const nested = tree() === undefined ? undefined : nodeAt(tree()!, [1])
     expect(nested?.kind === 'split' && nested.axis).toBe('row')
   })
@@ -419,7 +414,7 @@ describe('pane commands', () => {
     // The Conversation, a settings sheet, an embedded page: there the arrows and
     // Backspace belong to whatever has focus, so nothing may be consumed.
     const { commands } = bench({ current: 'anchor-1' })
-    const splitCommands = new Set(['splitPane.new', 'splitPane.newRight'])
+    const splitCommands = new Set(['splitPane.new'])
     for (const command of commands.filter(entry => !splitCommands.has(entry.id))) {
       expect(command.resolve({}).status, command.id).toBe('pass')
     }

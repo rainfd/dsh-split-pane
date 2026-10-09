@@ -7,7 +7,7 @@
  */
 import type { ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { SplitDownGlyph, SplitRightGlyph } from './PaneGlyphs.tsx'
+import { SplitRightGlyph } from './PaneGlyphs.tsx'
 import css from './SplitPane.module.css'
 
 /** Copy for one pane's chrome. */
@@ -15,7 +15,6 @@ export interface PaneChromeLabels {
   readonly select: string
   readonly close: string
   readonly splitRight: string
-  readonly splitDown: string
 }
 
 /** What one pane's chrome draws and reports. */
@@ -25,7 +24,7 @@ export interface PaneChromeProps {
   readonly choices: readonly { readonly id: SessionId; readonly title: string }[]
   readonly labels: PaneChromeLabels
   readonly onSelect: (sessionId: SessionId | undefined) => void
-  readonly onSplit: (axis: 'row' | 'column') => void
+  readonly onSplit: () => void
   readonly onClose: () => void
 }
 
@@ -39,6 +38,9 @@ export function PaneChrome({
 }: PaneChromeProps): ReactNode {
   return (
     <header className={css.chrome} data-split-pane-chrome="">
+      {/* The Session header above this row names the Session; this picker is
+          what re-points the pane, and it is the only place an empty pane's
+          choice is visible, so it stays. */}
       <select
         className={css.select}
         aria-label={labels.select}
@@ -60,16 +62,8 @@ export function PaneChrome({
           aria-label={labels.splitRight}
           title={labels.splitRight}
           disabled={!canSplit}
-          onClick={() => { onSplit('row') }}
+          onClick={onSplit}
         ><SplitRightGlyph /></button>
-        <button
-          type="button"
-          className={css.action}
-          aria-label={labels.splitDown}
-          title={labels.splitDown}
-          disabled={!canSplit}
-          onClick={() => { onSplit('column') }}
-        ><SplitDownGlyph /></button>
         <button
           type="button"
           className={css.action}

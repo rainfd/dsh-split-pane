@@ -11,7 +11,6 @@ export const NS = 'splitPane'
 export const zh = {
   'entry.label': '新分屏',
   'entry.aria': '在分屏中新建会话',
-  'shortcut.label': '向下分屏并新建会话',
   'shortcut.split.right': '向右分屏并新建会话',
   'shortcut.alias.split': '分屏',
   'shortcut.alias.splitRight': '向右分屏',
@@ -35,7 +34,6 @@ export const zh = {
   'pane.selectSession': '选择会话',
   'pane.close': '关闭此面板',
   'pane.split.right': '向右分屏',
-  'pane.split.down': '向下分屏',
   'pane.new': '新会话',
 } as const
 
@@ -43,7 +41,6 @@ export const zh = {
 export const en: Record<keyof typeof zh, string> = {
   'entry.label': 'New split',
   'entry.aria': 'New session in a split pane',
-  'shortcut.label': 'New session in a pane below',
   'shortcut.split.right': 'New session in a pane to the right',
   'shortcut.alias.split': 'split',
   'shortcut.alias.splitRight': 'split right',
@@ -67,7 +64,6 @@ export const en: Record<keyof typeof zh, string> = {
   'pane.selectSession': 'Select a session',
   'pane.close': 'Close this pane',
   'pane.split.right': 'Split right',
-  'pane.split.down': 'Split down',
   'pane.new': 'New session',
 }
 
