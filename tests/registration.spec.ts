@@ -16,7 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import { SPLIT_PANEL_ID } from '../src/client/contract/slots.ts'
-import { leaf, nodeAt } from '../src/client/contract/layout.ts'
+import { leaf, nodeAt, panes } from '../src/client/contract/layout.ts'
 import type { SplitPaneActions, SplitPaneState } from '../src/client/stores.ts'
 import { NS, en, zh } from '../src/client/locales.ts'
 
@@ -46,6 +46,8 @@ interface RegisteredCommand {
 function bench(options: {
   readonly current?: string
   readonly activePanelId?: string
+  readonly archivedSessionIds?: readonly string[]
+  readonly sessions?: Record<string, { readonly id: string; readonly blank: boolean }>
   readonly workspaces?: readonly {
     workspaceId: string
     path: string
@@ -93,6 +95,15 @@ function bench(options: {
     },
     sessions: {
       retain: vi.fn(),
+      list: {
+        getSnapshot: () => ({
+          phase: 'ready',
+          ids: Object.keys(options.sessions ?? {}),
+          byId: options.sessions ?? {},
+          projectionsBySession: {},
+        }),
+        subscribe: () => () => {},
+      },
       create: vi.fn(() => {
         counter += 1
         return Promise.resolve(`created-${counter}`)
@@ -102,7 +113,7 @@ function bench(options: {
       list: {
         getSnapshot: () => ({
           phase: 'ready',
-          archivedSessionIds: [],
+          archivedSessionIds: options.archivedSessionIds ?? [],
           items: options.workspaces ?? [],
           byId: {},
         }),
@@ -437,6 +448,52 @@ describe('pane commands', () => {
     // An anchor with no pane that way keeps its focus and consumes the press.
     expect(run(id(commands, 'splitPane.focusLeft'))).toBe('handled')
     expect(state()?.focus).toEqual([0])
+  })
+
+  it('opens a Workspace in the pane, and never hands back an archived Session', () => {
+    const blank = 'blank-live'
+    const archived = 'blank-archived'
+    const { faces, commands } = bench({
+      current: 'anchor-1',
+      activePanelId: SPLIT_PANEL_ID,
+      sessions: {
+        [blank]: { id: blank, blank: true },
+        [archived]: { id: archived, blank: true },
+      },
+      archivedSessionIds: [archived],
+      workspaces: [{
+        workspaceId: 'ws-9', path: '/tmp/ws', sessionIds: [archived, blank],
+      }],
+    })
+    const openWorkspaceIn = fromFace<(
+      anchor: SessionId, path: readonly number[], workspaceId: string,
+    ) => void>(faces, 'openWorkspaceIn')
+    const { anchor, state } = layout(faces, 2)
+
+    // The live blank Session is the one New Session would reuse...
+    openWorkspaceIn(anchor, [0], 'ws-9')
+    const tree = state()?.tree
+    const all = tree === undefined ? [] : panes(tree).map(pane => `${pane.path.join('.')}=${pane.sessionId}`)
+    expect(all, JSON.stringify(all)).toContain(`0=${blank}`)
+
+    // ...and an archived blank Session is never handed back, even though it is
+    // still listed in its Workspace: archiving only adds the id to the archive
+    // set, so membership alone cannot answer this.
+    const archivedOnly = bench({
+      current: 'anchor-1',
+      activePanelId: SPLIT_PANEL_ID,
+      sessions: { [archived]: { id: archived, blank: true } },
+      archivedSessionIds: [archived],
+      workspaces: [{ workspaceId: 'ws-9', path: '/tmp/ws', sessionIds: [archived] }],
+    })
+    const isolated = layout(archivedOnly.faces, 2)
+    const request = fromFace<(
+      anchor: SessionId, path: readonly number[], workspaceId: string,
+    ) => void>(archivedOnly.faces, 'openWorkspaceIn')
+    request(isolated.anchor, [0], 'ws-9')
+    // Nothing to reuse, so a fresh Session is created for the pane instead.
+    expect(archivedOnly.create).toHaveBeenCalledWith({ workspaceId: 'ws-9' })
+    void commands
   })
 
   it('closes the focused pane, leaving the sibling in its place', () => {

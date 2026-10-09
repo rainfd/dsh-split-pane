@@ -176,13 +176,18 @@ export function apply(ctx: Context): void {
   const openWorkspaceIn = (
     anchor: SessionId, path: readonly number[], workspaceId: string,
   ): void => {
-    const target = ctx.workspaces.list.getSnapshot().items
-      .find(item => item.workspaceId === workspaceId)
+    const snapshot = ctx.workspaces.list.getSnapshot()
+    const target = snapshot.items.find(item => item.workspaceId === workspaceId)
     if (target === undefined) return
     // Reuse the blank Session already aimed at that Workspace, exactly as New
     // Session does; creating a fresh one every time would leave a trail of
     // identical blank Sessions behind the picker.
+    //
+    // Archived Sessions are skipped: archiving only adds the id to the archive
+    // set, so an archived blank Session stays in its Workspace's `sessionIds`
+    // and would otherwise be handed back to the pane it was archived away from.
     const reusable = target.sessionIds
+      .filter(id => !snapshot.archivedSessionIds.includes(id))
       .map(id => ctx.sessions.list.getSnapshot().byId[id])
       .find(row => row?.blank === true)
     if (reusable !== undefined) {
