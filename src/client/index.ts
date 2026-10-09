@@ -58,8 +58,12 @@ const NEW_SPLIT_COMMAND = 'splitPane.new'
  *
  * Panes divide the centre column sideways — the layout a workspace of live
  * Conversations is read in — so the command always splits to the right and
- * there is no second direction to bind. `splitPane.newRight` is kept as an
- * alias of the same id so an existing binding keeps working.
+ * there is no second direction to bind.
+ *
+ * `splitPane.newRight`, which used to bind that same direction separately, is
+ * gone rather than aliased: a saved keybinding for it becomes an orphan in the
+ * reference panel's dormant list. `splitPane.new` is what the header button,
+ * the tooltip and the reference all name.
  */
 const SPLIT_COMMANDS = [
   {
