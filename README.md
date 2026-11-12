@@ -121,6 +121,7 @@ None; this package neither assembles nor sends a provider request.
 - **Retention grows with the pane count.** Each pane holds its own Session reference and history stream; there is no eviction of off-screen panes yet, so a very wide arrangement costs one live stream per pane.
 - **No drag-to-arrange.** Panes are created by the split controls and removed by close; moving an existing pane to another position is not offered.
 - **The workspace is not a Session.** It carries no Session of its own, so it has no entry in the Session list and its arrangement is keyed by whichever Session was current when it opened.
+- **An archived Session is never handed back to a pane:** it stays out of the pane's Session picker, and opening its Workspace seats a live blank Session instead of the archived one.
 
 ### Dev Note
 
